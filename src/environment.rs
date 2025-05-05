@@ -1,11 +1,14 @@
+use std::fs;
+
 use futures::StreamExt;
 use x11rb_async::errors::ConnectionError;
-use x11rb_async::protocol::Event;
-use x11rb_async::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, EventMask, Window};
+use x11rb_async::protocol::xproto::{
+    ChangeWindowAttributesAux, ConnectionExt, EventMask, GrabMode, Keycode, ModMask, Window,
+};
 use x11rb_async::rust_connection::RustConnection;
 
 use crate::connection::ConnectionEventStreamer;
-use crate::keyboard::Key;
+use crate::keyboard::KeyEvent;
 
 pub struct Environment {
     conn: RustConnection,
@@ -17,33 +20,41 @@ impl Environment {
         conn: RustConnection,
         root: Window,
     ) -> Result<Self, ConnectionError> {
+        log::info!("setting up environment");
         conn.change_window_attributes(
             root,
             &ChangeWindowAttributesAux::default().event_mask(
                 EventMask::STRUCTURE_NOTIFY
                     | EventMask::SUBSTRUCTURE_NOTIFY
-                    | EventMask::SUBSTRUCTURE_REDIRECT
-                    | EventMask::BUTTON_PRESS
-                    | EventMask::BUTTON_RELEASE
-                    | EventMask::KEY_PRESS
-                    | EventMask::KEY_RELEASE,
+                    | EventMask::SUBSTRUCTURE_REDIRECT,
             ),
+        )
+        .await?;
+
+        conn.ungrab_key(0, root, ModMask::ANY).await?;
+
+        conn.grab_key(
+            true,
+            root,
+            ModMask::SHIFT,
+            'q' as u8,
+            GrabMode::ASYNC,
+            GrabMode::ASYNC,
         )
         .await?;
         Ok(Self { conn })
     }
 
-    pub async fn run(mut self) -> Result<(), ConnectionError> {
+    pub async fn run(self) -> Result<(), ConnectionError> {
         let mut stream = ConnectionEventStreamer(&self.conn);
 
         while let Some(result) = stream.next().await {
             match result {
                 Ok(event) => match event {
-                    Event::ButtonPress(_) | Event::ButtonPress(_) => {
-                        let key = Key::try_from(event).expect("couldn't parse key event");
+                    _ => {
+                        log::info!("new event {:?}", event);
                         break;
                     }
-                    _ => {}
                 },
                 Err(e) => return Err(e),
             }

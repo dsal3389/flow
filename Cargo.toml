@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0.98"
-bitflags = "2.9.0"
-futures = "0.3.31"
-thiserror = "2.0.12"
+anyhow = "1.0"
+bitflags = "2.9"
+futures = "0.3"
+log = { version = "0.4.27", features = ["std"] }
+thiserror = "2.0"
 tokio = { version = "1.44.2", features = ["rt", "macros", "rt-multi-thread"] }
 x11rb-async = "0.13.1"

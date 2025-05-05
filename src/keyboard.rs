@@ -14,33 +14,25 @@ enum KeyModifier {
     ALT = 0x2,
 }
 
-enum KeyEvent {
-    Press,
-    Release,
-}
-
 pub struct Key {
     c: char,
-    time: u32,
-    event: KeyEvent,
 }
 
-impl Key {
-    fn new(c: char, time: u32, event: KeyEvent) -> Key {
-        Key { c, time, event }
-    }
+pub enum KeyEvent {
+    Press(Key),
+    Release(Key),
 }
 
-impl TryFrom<Event> for Key {
+impl TryFrom<Event> for KeyEvent {
     type Error = KeyError;
     fn try_from(value: Event) -> Result<Self, Self::Error> {
         let key = match value {
-            Event::ButtonPress(event) => {
-                Key::new(char::from(event.detail), event.time, KeyEvent::Press)
-            }
-            Event::ButtonRelease(event) => {
-                Key::new(char::from(event.detail), event.time, KeyEvent::Release)
-            }
+            Event::ButtonPress(event) => KeyEvent::Press(Key {
+                c: event.detail.into(),
+            }),
+            Event::ButtonRelease(event) => KeyEvent::Release(Key {
+                c: event.detail.into(),
+            }),
             _ => {
                 return Err(KeyError {
                     msg: format!("unknown key event {:?}", value),
