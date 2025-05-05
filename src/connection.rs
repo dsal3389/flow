@@ -17,7 +17,7 @@ pub async fn create_connection() -> Result<(RustConnection, Window), ConnectErro
     // incoming data from the x11 server
     tokio::spawn(async move {
         match derive.await {
-            Err(e) => eprintln!("error {}", e),
+            Err(e) => log::error!("connection error {}", e),
             _ => unreachable!(),
         }
     });

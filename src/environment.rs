@@ -1,5 +1,3 @@
-use std::fs;
-
 use futures::StreamExt;
 use x11rb_async::errors::ConnectionError;
 use x11rb_async::protocol::xproto::{
@@ -20,7 +18,9 @@ impl Environment {
         conn: RustConnection,
         root: Window,
     ) -> Result<Self, ConnectionError> {
-        log::info!("setting up environment");
+        log::debug!("setting up environment with created rust connection");
+        log::debug!("changing window `{}` attributes", root);
+
         conn.change_window_attributes(
             root,
             &ChangeWindowAttributesAux::default().event_mask(
@@ -32,7 +32,6 @@ impl Environment {
         .await?;
 
         conn.ungrab_key(0, root, ModMask::ANY).await?;
-
         conn.grab_key(
             true,
             root,
@@ -42,10 +41,13 @@ impl Environment {
             GrabMode::ASYNC,
         )
         .await?;
+
+        log::debug!("grab and ungrab requet event performed successfuly");
         Ok(Self { conn })
     }
 
     pub async fn run(self) -> Result<(), ConnectionError> {
+        log::info!("start listening for events from X server");
         let mut stream = ConnectionEventStreamer(&self.conn);
 
         while let Some(result) = stream.next().await {
