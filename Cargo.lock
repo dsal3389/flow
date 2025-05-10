@@ -185,6 +185,7 @@ dependencies = [
  "log",
  "thiserror",
  "tokio",
+ "x11rb",
  "x11rb-async",
 ]
 

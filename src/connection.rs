@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::task::Poll;
 
 use futures::Stream;
@@ -7,34 +8,53 @@ use x11rb_async::protocol::Event;
 use x11rb_async::protocol::xproto::Window;
 use x11rb_async::rust_connection::RustConnection;
 
-/// creates a default connection to the x11 server and does nothing with it,
-/// also setup the connection derive in the background
-pub async fn create_connection() -> Result<(RustConnection, Window), ConnectError> {
-    let (conn, _, derive) = RustConnection::connect(None).await?;
-    let root = conn.setup().roots[0].root;
-
-    // create a background task that will listen for
-    // incoming data from the x11 server
-    tokio::spawn(async move {
-        match derive.await {
-            Err(e) => log::error!("connection error {}", e),
-            _ => unreachable!(),
-        }
-    });
-    Ok((conn, root))
+pub struct XConnection {
+    conn: RustConnection,
+    root: Window,
 }
 
-pub struct ConnectionEventStreamer<'conn>(pub &'conn RustConnection);
+impl XConnection {
+    /// creates a default connection to the x11 server and does nothing with it,
+    /// also setup the connection derive in the background
+    pub async fn connect(display_name: Option<&str>) -> Result<Self, ConnectError> {
+        let (conn, display, derive) = RustConnection::connect(display_name).await?;
+        let root = conn.setup().roots[display].root;
 
-impl Stream for ConnectionEventStreamer<'_> {
+        // create a background task that will listen for
+        // incoming data from the x11 server
+        tokio::spawn(async move {
+            match derive.await {
+                Err(e) => log::error!("connection error {}", e),
+                _ => unreachable!(),
+            }
+        });
+        Ok(Self { conn, root })
+    }
+
+    pub fn root(&self) -> Window {
+        self.root
+    }
+}
+
+/// defined so we could use all the regular `RustConnection`
+/// functionalities
+impl Deref for XConnection {
+    type Target = RustConnection;
+    fn deref(&self) -> &Self::Target {
+        &self.conn
+    }
+}
+
+impl Stream for XConnection {
     type Item = Result<Event, ConnectionError>;
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        let result = match self.0.poll_for_event() {
+        let result = match self.poll_for_event() {
             Ok(event) => {
                 if event.is_none() {
+                    cx.waker().wake_by_ref();
                     return Poll::Pending;
                 }
 
@@ -44,7 +64,7 @@ impl Stream for ConnectionEventStreamer<'_> {
             Err(e) => Err(e.into()),
         };
 
-        cx.waker().clone().wake();
+        cx.waker().wake_by_ref();
         Poll::Ready(Some(result))
     }
 }

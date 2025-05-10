@@ -9,5 +9,6 @@ bitflags = "2.9"
 futures = "0.3"
 log = { version = "0.4.27", features = ["std"] }
 thiserror = "2.0"
-tokio = { version = "1.44.2", features = ["rt", "macros", "rt-multi-thread"] }
+tokio = { version = "1.44.2", features = ["rt", "macros", "rt-multi-thread", "time"] }
+x11rb = { version = "0.13.1", features = ["cursor"] }
 x11rb-async = "0.13.1"
