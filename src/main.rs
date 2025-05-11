@@ -73,12 +73,15 @@ fn install_hooks() {
 
 async fn run() -> anyhow::Result<()> {
     let xconn = flow::XConnection::connect(None).await?;
-    let window_manager = flow::WindowManager::new_and_setup(xconn).await?;
+    let window_manager = flow::WindowManager::new_and_setup(
+        xconn,
+        &[flow::KeyMap::new('q', flow::KeyAction::Placeholder)],
+    )
+    .await?;
 
     log::info!("window manager environment is setup successfuly");
 
-    window_manager.run().await?;
-    Ok(())
+    window_manager.run().await
 }
 
 #[tokio::main]

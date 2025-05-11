@@ -1,32 +1,23 @@
-use std::io::IoSlice;
-
 use futures::StreamExt;
-use x11rb::resource_manager::Database;
-use x11rb_async::connection::RequestConnection;
 use x11rb_async::errors::ReplyError;
+use x11rb_async::protocol::xkb::ConnectionExt as _;
 use x11rb_async::protocol::xproto::{self, ConnectionExt, EventMask};
 use x11rb_async::protocol::{ErrorKind, Event};
+use xkbcommon::xkb as xkbc;
 
 use crate::XConnection;
-
-/// loads the default X database
-async fn load_database(conn: &XConnection) -> anyhow::Result<Database> {
-    let (bytes, fd) = Database::GET_RESOURCE_DATABASE.serialize();
-    let slice = IoSlice::new(&bytes[0]);
-    let reply = conn
-        .send_request_with_reply(&[slice], fd)
-        .await?
-        .reply()
-        .await?;
-    Ok(Database::new_from_default(&reply, "".into()))
-}
+use crate::keys;
 
 pub struct WindowManager {
     conn: XConnection,
+    key_state: keys::KeyState,
 }
 
 impl WindowManager {
-    pub async fn new_and_setup(conn: XConnection) -> anyhow::Result<Self> {
+    pub async fn new_and_setup<'a, T>(conn: XConnection, keys_map: T) -> anyhow::Result<Self>
+    where
+        T: IntoIterator<Item = &'a keys::KeyMap>,
+    {
         let cookie = conn
             .change_window_attributes(
                 conn.root(),
@@ -56,19 +47,41 @@ impl WindowManager {
             }
         })?;
 
-        conn.grab_key(
-            true,
-            conn.root(),
-            xproto::ModMask::SHIFT,
-            'q' as xproto::Keycode,
-            xproto::GrabMode::ASYNC,
-            xproto::GrabMode::ASYNC,
-        )
-        .await?
-        .check()
-        .await?;
+        conn.xkb_use_extension(1, 0).await?.reply().await?;
+        let key_state = keys::KeyState::from_connection(conn.inner()).await?;
 
-        Ok(Self { conn })
+        conn.ungrab_key(0, conn.root(), xproto::ModMask::ANY)
+            .await?
+            .check()
+            .await?;
+
+        // request the hot keys events for each key map
+        // some key maps may not register if we can't find a matching keycode
+        // for a mapped key, in both case a log message will be written
+        // to notify the user
+        for map in keys_map {
+            match map.key().keycode(&key_state) {
+                Some(keycode) => {
+                    conn.grab_key(
+                        false,
+                        conn.root(),
+                        xproto::ModMask::ANY,
+                        keycode,
+                        xproto::GrabMode::ASYNC,
+                        xproto::GrabMode::ASYNC,
+                    )
+                    .await?
+                    .check()
+                    .await?;
+                    log::info!("register mapping {}", map);
+                }
+                None => {
+                    log::warn!("couldn't register mapping {}", map);
+                }
+            }
+        }
+
+        Ok(WindowManager { conn, key_state })
     }
 
     pub async fn run(mut self) -> anyhow::Result<()> {

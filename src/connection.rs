@@ -3,11 +3,12 @@ use std::task::Poll;
 
 use futures::Stream;
 use x11rb_async::connection::Connection;
-use x11rb_async::errors::{ConnectError, ConnectionError};
+use x11rb_async::errors::ConnectionError;
 use x11rb_async::protocol::Event;
 use x11rb_async::protocol::xproto::Window;
 use x11rb_async::rust_connection::RustConnection;
 
+#[derive(Debug)]
 pub struct XConnection {
     conn: RustConnection,
     root: Window,
@@ -16,7 +17,7 @@ pub struct XConnection {
 impl XConnection {
     /// creates a default connection to the x11 server and does nothing with it,
     /// also setup the connection derive in the background
-    pub async fn connect(display_name: Option<&str>) -> Result<Self, ConnectError> {
+    pub async fn connect(display_name: Option<&str>) -> anyhow::Result<Self> {
         let (conn, display, derive) = RustConnection::connect(display_name).await?;
         let root = conn.setup().roots[display].root;
 
@@ -31,8 +32,16 @@ impl XConnection {
         Ok(Self { conn, root })
     }
 
+    /// returns the connection root window
     pub fn root(&self) -> Window {
         self.root
+    }
+
+    /// although the type implements `Deref`, some functions expect
+    /// a type that implements `Connection + ConnectionExt` and it is more
+    /// nice and readable to call inner instead or referencing a deref (&*conn)
+    pub fn inner(&self) -> &RustConnection {
+        &self.conn
     }
 }
 
