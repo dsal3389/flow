@@ -43,10 +43,13 @@ impl log::Log for Logger {
         }
 
         let file = Arc::clone(&self.0);
-        let message = format!("[{}] {}", record.level(), record.args());
-
-        writeln!(file.lock().unwrap(), "{}", message).unwrap();
-        println!("{}", message);
+        writeln!(
+            file.lock().unwrap(),
+            "[{}] {}",
+            record.level(),
+            record.args()
+        )
+        .expect("couldn't write to the log file");
     }
 
     fn flush(&self) {
