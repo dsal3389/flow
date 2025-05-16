@@ -2,22 +2,34 @@ use std::ops::Deref;
 use std::task::Poll;
 
 use futures::Stream;
+use thiserror::Error;
+use x11rb_async::errors::{ConnectionError, ConnectError};
 use x11rb_async::connection::Connection;
-use x11rb_async::errors::ConnectionError;
 use x11rb_async::protocol::Event;
 use x11rb_async::protocol::xproto::Window;
 use x11rb_async::rust_connection::RustConnection;
 
+
+#[derive(Error, Debug)]
+pub enum FlowConnectionError {
+    #[error(transparent)]
+    X11ConnectionError(#[from] ConnectionError),
+
+    #[error(transparent)]
+    X11ConnectError(#[from] ConnectError)
+}
+
+
 #[derive(Debug)]
-pub struct XConnection {
+pub struct FlowConnection {
     conn: RustConnection,
     root: Window,
 }
 
-impl XConnection {
+impl FlowConnection {
     /// creates a default connection to the x11 server and does nothing with it,
     /// also setup the connection derive in the background
-    pub async fn connect(display_name: Option<&str>) -> anyhow::Result<Self> {
+    pub async fn connect(display_name: Option<&str>) -> Result<Self, FlowConnectionError> {
         let (conn, display, derive) = RustConnection::connect(display_name).await?;
         let root = conn.setup().roots[display].root;
 
@@ -40,21 +52,21 @@ impl XConnection {
     /// although the type implements `Deref`, some functions expect
     /// a type that implements `Connection + ConnectionExt` and it is more
     /// nice and readable to call inner instead or referencing a deref (&*conn)
-    pub fn inner(&self) -> &RustConnection {
+    pub fn x11_raw_connection(&self) -> &RustConnection {
         &self.conn
     }
 }
 
 /// defined so we could use all the regular `RustConnection`
 /// functionalities
-impl Deref for XConnection {
+impl Deref for FlowConnection {
     type Target = RustConnection;
     fn deref(&self) -> &Self::Target {
         &self.conn
     }
 }
 
-impl Stream for XConnection {
+impl Stream for FlowConnection {
     type Item = Result<Event, ConnectionError>;
     fn poll_next(
         self: std::pin::Pin<&mut Self>,

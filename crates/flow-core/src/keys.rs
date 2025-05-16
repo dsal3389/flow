@@ -1,5 +1,4 @@
-use std::fmt;
-
+use x11rb_async::errors::ReplyError;
 use x11rb_async::connection::Connection;
 use x11rb_async::protocol::xproto::{ConnectionExt, GetKeyboardMappingReply};
 use xkbcommon::xkb;
@@ -11,7 +10,7 @@ pub struct KeyState {
 }
 
 impl KeyState {
-    pub async fn from_connection<C>(conn: &C) -> anyhow::Result<Self>
+    pub async fn from_connection<C>(conn: &C) -> Result<Self, ReplyError>
     where
         C: Connection + ConnectionExt,
     {
@@ -61,39 +60,5 @@ impl Key {
 impl From<char> for Key {
     fn from(value: char) -> Self {
         Key { c: value }
-    }
-}
-
-#[derive(Debug)]
-pub enum KeyEvent {
-    Press(Key),
-    Release(Key),
-}
-
-#[derive(Debug)]
-pub enum KeyAction {
-    Spawn { command: String, args: Vec<String> },
-    Placeholder,
-}
-
-#[derive(Debug)]
-pub struct KeyMap(Key, KeyAction);
-
-impl KeyMap {
-    pub fn new<T>(key: T, action: KeyAction) -> Self
-    where
-        T: Into<Key>,
-    {
-        KeyMap(key.into(), action)
-    }
-
-    pub fn key(&self) -> Key {
-        self.0
-    }
-}
-
-impl fmt::Display for KeyMap {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "`{}` -> something", self.0.c)
     }
 }

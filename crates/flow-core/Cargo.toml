@@ -1,0 +1,13 @@
+[package]
+name = "flow-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+futures = "0.3.31"
+log = "0.4.27"
+thiserror = "2.0.12"
+tokio = { version = "1.45.0", features = ["rt"] }
+x11rb-async = { version = "0.13.1", features = ["xkb"] }
+xkbcommon = { version = "0.8.0", features = ["x11"] }

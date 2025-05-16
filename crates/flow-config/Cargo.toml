@@ -1,0 +1,7 @@
+[package]
+name = "flow-config"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+flow-core = { version = "0.1.0", path = "../flow-core" }
