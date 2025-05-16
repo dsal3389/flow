@@ -1,3 +1,5 @@
+use std::fmt;
+
 use flow_core::Key;
 
 pub struct Keybind {
@@ -10,6 +12,12 @@ impl Keybind {
         K: Into<Key>
     {
         Keybind { key: key.into() }
+    }
+}
+
+impl fmt::Display for Keybind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "`{}` -> todo", self.key)
     }
 }
 

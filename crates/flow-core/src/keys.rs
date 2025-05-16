@@ -1,3 +1,5 @@
+use std::fmt;
+
 use x11rb_async::errors::ReplyError;
 use x11rb_async::connection::Connection;
 use x11rb_async::protocol::xproto::{ConnectionExt, GetKeyboardMappingReply};
@@ -54,6 +56,12 @@ impl Key {
     pub fn keycode(&self, state: &KeyState) -> Option<xkb::Keycode> {
         let keysym = xkb::utf32_to_keysym(self.c as u32);
         state.keysym_to_keycode(keysym)
+    }
+}
+
+impl fmt::Display for Key {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.c)
     }
 }
 

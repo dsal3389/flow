@@ -1,3 +1,4 @@
+mod lexer;
 mod config;
 pub mod profile;
 
