@@ -4,12 +4,17 @@ use flow_core::Key;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum TokenKind {
+    Dot,
+    Comma,
+    WhiteSpace,
+
+    // literals
     String,
     Number,
     Identifier,
 
     // keywords
-    Bind
+    Bind,
 }
 
 #[derive(Debug)]
@@ -18,7 +23,7 @@ pub(crate) struct Token<'a> {
     line: usize,
     start: usize,
     end: usize,
-    kind: TokenKind
+    kind: TokenKind,
 }
 
 impl<'a> Token<'a> {
@@ -27,6 +32,7 @@ impl<'a> Token<'a> {
         self.kind.clone()
     }
 
+    /// returns the token literal value
     pub(crate) fn literal(&self) -> Cow<'a, str> {
         self.literal.clone()
     }
@@ -42,20 +48,42 @@ pub(crate) struct LexerIter<'a> {
 }
 
 impl<'a> LexerIter<'a> {
-    fn next_token(content: &str) -> Option<(usize, TokenKind)> {
+    /// returns the first token from the given string and the
+    /// token literal length
+    fn first_token(content: &str) -> Option<(usize, TokenKind)> {
+        if content.is_empty() {
+            return None;
+        }
+
+        // since we already checked that the string is not empty
+        // it is safe to unwrap and expect at least 1 char
         match content.chars().next().unwrap() {
-            'a' .. 'z' | 'A' .. 'Z' | '_' => {
+            '.' => Some((1, TokenKind::Dot)),
+            ',' => Some((1, TokenKind::Comma)),
+            ' ' | '\r' | '\n' => {
+                let count = content
+                    .chars()
+                    .take_while(|c| matches!(c, ' ' | '\r' | '\n'))
+                    .count();
+                Some((count, TokenKind::WhiteSpace))
+            }
+            '0'..'9' => {
+                let count = content
+                    .chars()
+                    .take_while(|c| matches!(c, '0'..'9'))
+                    .count();
+                Some((count, TokenKind::Number))
+            }
+            'a'..'z' | 'A'..'Z' | '_' => {
                 let identifier = content
                     .chars()
                     .take_while(|c| matches!(c, 'a' .. 'z' | 'A' .. 'Z' | '_'))
                     .collect::<String>();
 
-                if identifier == "bind" {
-                    return Some((identifier.len(), TokenKind::Bind))
-                }
+                // TODO: check for keyword type
                 todo!()
             }
-            _ => todo!()
+            _ => todo!(),
         }
     }
 }
@@ -69,7 +97,7 @@ impl<'a> Iterator for LexerIter<'a> {
 
         let content = &self.content[self.current..];
 
-        match Self::next_token(content) {
+        match Self::first_token(content) {
             Some((size, kind)) => {
                 let start = self.current;
                 let end = start + size;
@@ -80,10 +108,10 @@ impl<'a> Iterator for LexerIter<'a> {
                     line: self.line,
                     start,
                     end,
-                    kind
+                    kind,
                 })
             }
-            None => None
+            None => None,
         }
     }
 }
@@ -116,10 +144,8 @@ impl<'a> IntoIterator for &'a Lexer {
             start: 0,
             line: 1,
         }
-
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -128,9 +154,9 @@ mod tests {
     #[test]
     fn test_lexer_tokens() {
         let lexer = Lexer::new("bind x y".to_string());
-        let mut iter = lexer.iter();
+        let mut tokens_iter = lexer.iter();
 
-        let token = iter.next().expect("expected first token");
+        let token = tokens_iter.next().expect("expected first token");
         assert_eq!(token.kind(), TokenKind::Bind);
     }
 }

@@ -4,13 +4,13 @@ use x11rb_async::protocol::xkb::ConnectionExt as _;
 use x11rb_async::protocol::xproto::{self, ConnectionExt, EventMask};
 use x11rb_async::protocol::{ErrorKind, Event};
 
-use flow_core::{KeyState, FlowConnection};
 use flow_config::Config;
+use flow_core::{FlowConnection, KeyState};
 
 pub struct WindowManager {
     conn: FlowConnection,
     key_state: KeyState,
-    config: Config
+    config: Config,
 }
 
 impl WindowManager {
@@ -47,39 +47,43 @@ impl WindowManager {
         conn.xkb_use_extension(1, 0).await?.reply().await?;
         let key_state = KeyState::from_connection(conn.x11_raw_connection()).await?;
 
-        Ok(WindowManager {  conn, key_state, config })
+        Ok(WindowManager {
+            conn,
+            key_state,
+            config,
+        })
     }
 
-        // conn.ungrab_key(0, conn.root(), xproto::ModMask::ANY)
-        //     .await?
-        //     .check()
-        //     .await?;
+    // conn.ungrab_key(0, conn.root(), xproto::ModMask::ANY)
+    //     .await?
+    //     .check()
+    //     .await?;
 
-        // // request the hot keys events for each key map
-        // // some key maps may not register if we can't find a matching keycode
-        // // for a mapped key, in both case a log message will be written
-        // // to notify the user
-        // for map in keys_map {
-        //     match map.key().keycode(&key_state) {
-        //         Some(keycode) => {
-        //             conn.grab_key(
-        //                 false,
-        //                 conn.root(),
-        //                 xproto::ModMask::ANY,
-        //                 keycode,
-        //                 xproto::GrabMode::ASYNC,
-        //                 xproto::GrabMode::ASYNC,
-        //             )
-        //             .await?
-        //             .check()
-        //             .await?;
-        //             log::info!("register mapping {}", map);
-        //         }
-        //         None => {
-        //             log::warn!("couldn't register mapping {}", map);
-        //         }
-        //     }
-        // }
+    // // request the hot keys events for each key map
+    // // some key maps may not register if we can't find a matching keycode
+    // // for a mapped key, in both case a log message will be written
+    // // to notify the user
+    // for map in keys_map {
+    //     match map.key().keycode(&key_state) {
+    //         Some(keycode) => {
+    //             conn.grab_key(
+    //                 false,
+    //                 conn.root(),
+    //                 xproto::ModMask::ANY,
+    //                 keycode,
+    //                 xproto::GrabMode::ASYNC,
+    //                 xproto::GrabMode::ASYNC,
+    //             )
+    //             .await?
+    //             .check()
+    //             .await?;
+    //             log::info!("register mapping {}", map);
+    //         }
+    //         None => {
+    //             log::warn!("couldn't register mapping {}", map);
+    //         }
+    //     }
+    // }
 
     pub async fn run(mut self) -> anyhow::Result<()> {
         while let Some(result) = self.conn.next().await {

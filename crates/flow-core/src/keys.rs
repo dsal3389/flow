@@ -1,7 +1,7 @@
 use std::fmt;
 
-use x11rb_async::errors::ReplyError;
 use x11rb_async::connection::Connection;
+use x11rb_async::errors::ReplyError;
 use x11rb_async::protocol::xproto::{ConnectionExt, GetKeyboardMappingReply};
 use xkbcommon::xkb;
 

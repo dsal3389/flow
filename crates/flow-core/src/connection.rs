@@ -3,12 +3,11 @@ use std::task::Poll;
 
 use futures::Stream;
 use thiserror::Error;
-use x11rb_async::errors::{ConnectionError, ConnectError};
 use x11rb_async::connection::Connection;
+use x11rb_async::errors::{ConnectError, ConnectionError};
 use x11rb_async::protocol::Event;
 use x11rb_async::protocol::xproto::Window;
 use x11rb_async::rust_connection::RustConnection;
-
 
 #[derive(Error, Debug)]
 pub enum FlowConnectionError {
@@ -16,9 +15,8 @@ pub enum FlowConnectionError {
     X11ConnectionError(#[from] ConnectionError),
 
     #[error(transparent)]
-    X11ConnectError(#[from] ConnectError)
+    X11ConnectError(#[from] ConnectError),
 }
-
 
 #[derive(Debug)]
 pub struct FlowConnection {

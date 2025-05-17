@@ -3,39 +3,32 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use anyhow::Context;
+use flow_config::profile::{Keybind, Profile};
+use flow_config::{Config, ConfigParser};
 use flow_core::FlowConnection;
-use flow_config::Config;
-use flow_config::profile::{Profile, Keybind};
 
 mod wm;
-
 
 /// the main logger struct, it accepts a file
 /// that all the log messages will be written to
 struct Logger(Arc<Mutex<fs::File>>);
 
 impl Logger {
-    const LOGGER_FILENAME: &str = "flow.log";
+    const FILENAME: &str = "flow.log";
 
-    fn new<T>(filename: T) -> std::io::Result<Logger>
+    fn from_path<P>(path: P) -> std::io::Result<Logger>
     where
-        T: AsRef<Path>,
+        P: AsRef<Path>,
     {
         let file = Arc::new(Mutex::new(
             fs::OpenOptions::new()
                 .create(true)
                 .truncate(true)
                 .write(true)
-                .open(filename.as_ref())?,
+                .open(path.as_ref())?,
         ));
         Ok(Logger(file))
-    }
-
-    fn find_default_path() -> PathBuf {
-        std::env::var("HOME").map_or_else(
-            |_| PathBuf::from("/var/log").join(Self::LOGGER_FILENAME),
-            |value| PathBuf::from(value).join(Self::LOGGER_FILENAME),
-        )
     }
 }
 
@@ -65,10 +58,24 @@ impl log::Log for Logger {
     }
 }
 
+/// finds the logger file path
+fn find_logger_file_path() -> PathBuf {
+    std::env::var("HOME").map_or_else(
+        |_| PathBuf::from("/var/log").join(Logger::FILENAME),
+        |value| PathBuf::from(value).join(Logger::FILENAME),
+    )
+}
+
+fn find_config_file_path() -> anyhow::Result<PathBuf> {
+    std::env::var("HOME")
+        .context("HOME environment variable is not set, couldn't find default config path")
+        .map(|value| PathBuf::from(value).join(Config::FILENAME))
+}
+
 /// create a logger instance and set it as the main logger
 #[inline]
 fn install_logger() -> anyhow::Result<()> {
-    let logger = Box::new(Logger::new(Logger::find_default_path())?);
+    let logger = Box::new(Logger::from_path(find_logger_file_path())?);
     log::set_boxed_logger(logger).map(|()| log::set_max_level(log::LevelFilter::Debug))?;
     Ok(())
 }
@@ -81,20 +88,15 @@ fn install_hooks() {
     }));
 }
 
-fn dummy_config() -> Config {
-    Config::new(
-        Profile::new(vec![Keybind::new('q')])
-    )
+#[inline]
+fn load_config() -> anyhow::Result<Config> {
+    Config::from_path(find_config_file_path()?).map_err(|e| e.into())
 }
 
 async fn run() -> anyhow::Result<()> {
-    let config = dummy_config();
+    let config = load_config()?;
     let connection = FlowConnection::connect(None).await?;
-    let window_manager = wm::WindowManager::setup_with_config(
-        connection,
-        config
-    )
-    .await?;
+    let window_manager = wm::WindowManager::setup_with_config(connection, config).await?;
 
     log::info!("window manager environment is setup successfuly");
 

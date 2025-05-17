@@ -1,5 +1,5 @@
-mod lexer;
 mod config;
+mod lexer;
 pub mod profile;
 
-pub use config::Config;
+pub use config::{Config, ConfigParser};

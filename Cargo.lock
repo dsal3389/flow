@@ -199,6 +199,8 @@ name = "flow-config"
 version = "0.1.0"
 dependencies = [
  "flow-core",
+ "futures",
+ "tokio",
 ]
 
 [[package]]
@@ -212,6 +214,14 @@ dependencies = [
  "tokio",
  "x11rb-async",
  "xkbcommon",
+]
+
+[[package]]
+name = "flow-inotify"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "inotify-sys",
 ]
 
 [[package]]
@@ -337,6 +347,15 @@ name = "hermit-abi"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fbf6a919d6cf397374f7dfeeea91d974c7c0a7221d0d0f4f20d859d329e53fcc"
+
+[[package]]
+name = "inotify-sys"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e05c02b5e89bff3b946cedeca278abc628fe811e604f027c45a8aa3cf793d0eb"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "libc"

@@ -9,7 +9,7 @@ pub struct Keybind {
 impl Keybind {
     pub fn new<K>(key: K) -> Keybind
     where
-        K: Into<Key>
+        K: Into<Key>,
     {
         Keybind { key: key.into() }
     }
@@ -22,7 +22,7 @@ impl fmt::Display for Keybind {
 }
 
 pub struct Profile {
-    keybinds: Vec<Keybind>
+    keybinds: Vec<Keybind>,
 }
 
 impl Profile {
