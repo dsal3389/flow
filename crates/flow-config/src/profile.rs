@@ -21,14 +21,14 @@ impl fmt::Display for Keybind {
     }
 }
 
-pub struct Profile {
+pub struct ProfileContext {
     keybinds: Vec<Keybind>,
 }
 
-impl Profile {
+impl ProfileContext {
     // TODO: remove, this is here just for tests
-    pub fn new(keybinds: Vec<Keybind>) -> Profile {
-        Profile { keybinds }
+    pub fn new(keybinds: Vec<Keybind>) -> ProfileContext {
+        ProfileContext { keybinds }
     }
 
     /// returns an iterator for configured keybindings

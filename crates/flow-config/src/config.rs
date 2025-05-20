@@ -1,12 +1,11 @@
 use std::fs::read_to_string;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::task::Poll;
 
 use futures::Stream;
 
 use super::lexer::Lexer;
-use super::profile::Profile;
+use super::profile::ProfileContext;
 
 pub struct ConfigParser {
     lexer: Lexer,

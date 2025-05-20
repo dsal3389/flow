@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
-use flow_config::profile::{Keybind, Profile};
+use flow_config::profile::{Keybind, ProfileContext};
 use flow_config::{Config, ConfigParser};
 use flow_core::FlowConnection;
 
@@ -58,7 +58,6 @@ impl log::Log for Logger {
     }
 }
 
-/// finds the logger file path
 fn find_logger_file_path() -> PathBuf {
     std::env::var("HOME").map_or_else(
         |_| PathBuf::from("/var/log").join(Logger::FILENAME),

@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use flow_core::Key;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum TokenKind {
@@ -17,24 +16,24 @@ pub(crate) enum TokenKind {
     Bind,
 }
 
-#[derive(Debug)]
-pub(crate) struct Token<'a> {
-    literal: Cow<'a, str>,
+#[derive(Debug, Clone)]
+pub(crate) struct Token {
+    literal: String,
     line: usize,
     start: usize,
     end: usize,
     kind: TokenKind,
 }
 
-impl<'a> Token<'a> {
+impl Token {
     /// returns the token kind
     pub(crate) fn kind(&self) -> TokenKind {
         self.kind.clone()
     }
 
     /// returns the token literal value
-    pub(crate) fn literal(&self) -> Cow<'a, str> {
-        self.literal.clone()
+    pub(crate) fn literal(&self) -> &str {
+        &self.literal
     }
 }
 
@@ -50,7 +49,7 @@ pub(crate) struct LexerIter<'a> {
 impl<'a> LexerIter<'a> {
     /// returns the first token from the given string and the
     /// token literal length
-    fn first_token(content: &str) -> Option<(usize, TokenKind)> {
+    fn next_token_from_string(content: &str) -> Option<(usize, TokenKind)> {
         if content.is_empty() {
             return None;
         }
@@ -80,8 +79,12 @@ impl<'a> LexerIter<'a> {
                     .take_while(|c| matches!(c, 'a' .. 'z' | 'A' .. 'Z' | '_'))
                     .collect::<String>();
 
-                // TODO: check for keyword type
-                todo!()
+                // TODO:  optimize with some hash table or something
+                let token_kind = match identifier.as_str() {
+                    "bind" => TokenKind::Bind,
+                    _ => TokenKind::Identifier,
+                };
+                Some((identifier.len(), token_kind))
             }
             _ => todo!(),
         }
@@ -89,7 +92,7 @@ impl<'a> LexerIter<'a> {
 }
 
 impl<'a> Iterator for LexerIter<'a> {
-    type Item = Token<'a>;
+    type Item = Token;
     fn next(&mut self) -> Option<Self::Item> {
         if self.current >= self.content.len() {
             return None;
@@ -97,14 +100,14 @@ impl<'a> Iterator for LexerIter<'a> {
 
         let content = &self.content[self.current..];
 
-        match Self::first_token(content) {
+        match Self::next_token_from_string(content) {
             Some((size, kind)) => {
                 let start = self.current;
                 let end = start + size;
                 self.current = end;
 
                 Some(Token {
-                    literal: Cow::from(Cow::from(&content[..end])),
+                    literal: content[..end].to_string(),
                     line: self.line,
                     start,
                     end,
@@ -135,7 +138,7 @@ impl Lexer {
 
 impl<'a> IntoIterator for &'a Lexer {
     type IntoIter = LexerIter<'a>;
-    type Item = Token<'a>;
+    type Item = Token;
 
     fn into_iter(self) -> Self::IntoIter {
         LexerIter {
@@ -152,11 +155,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_lexer_tokens() {
+    fn test_lexer_bind_parse() {
         let lexer = Lexer::new("bind x y".to_string());
-        let mut tokens_iter = lexer.iter();
-
-        let token = tokens_iter.next().expect("expected first token");
+        let token = lexer.iter().next().expect("expected first token");
         assert_eq!(token.kind(), TokenKind::Bind);
+    }
+
+    #[test]
+    fn test_lexer_int_parse() {
+        let lexer = Lexer::new("777 text".to_string());
+        let token = lexer.iter().next().expect("expected first token");
+        assert_eq!(token.kind(), TokenKind::Number);
+        assert_eq!(token.literal(), "777")
+    }
+
+    #[test]
+    fn test_lexer_identifier_parse() {
+        let lexer = Lexer::new("identifier".to_string());
+        let token = lexer.iter().next().expect("expected first token");
+        assert_eq!(token.kind(), TokenKind::Identifier);
+        assert_eq!(token.literal(), "identifier");
     }
 }
