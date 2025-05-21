@@ -1,11 +1,17 @@
-use std::borrow::Cow;
 
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum TokenKind {
     Dot,
     Comma,
+    Plus,
+    Star,
+    Minus,
+
+    // the whitespace and newline token kind is used internally by the lexer
+    // it is not yielded by the lexer iterator
     WhiteSpace,
+    NewLine,
 
     // literals
     String,
@@ -26,6 +32,16 @@ pub(crate) struct Token {
 }
 
 impl Token {
+    pub(crate) fn new(literal: String, line: usize, start: usize, end: usize, kind: TokenKind) -> Token {
+        Token {
+            literal,
+            line,
+            start,
+            end,
+            kind,
+        }
+    }
+
     /// returns the token kind
     pub(crate) fn kind(&self) -> TokenKind {
         self.kind.clone()
@@ -59,7 +75,11 @@ impl<'a> LexerIter<'a> {
         match content.chars().next().unwrap() {
             '.' => Some((1, TokenKind::Dot)),
             ',' => Some((1, TokenKind::Comma)),
-            ' ' | '\r' | '\n' => {
+            '+' => Some((1, TokenKind::Plus)),
+            '-' => Some((1, TokenKind::Minus)),
+            '*' => Some((1, TokenKind::Star)),
+            '\n' => Some((1, TokenKind::NewLine)),
+            ' ' | '\r' => {
                 let count = content
                     .chars()
                     .take_while(|c| matches!(c, ' ' | '\r' | '\n'))
@@ -98,23 +118,42 @@ impl<'a> Iterator for LexerIter<'a> {
             return None;
         }
 
+        // get all the content from the current index
+        // the `self.current` is updated each time we find a token
+        // and we will always point to the next token string
         let content = &self.content[self.current..];
 
-        match Self::next_token_from_string(content) {
-            Some((size, kind)) => {
-                let start = self.current;
-                let end = start + size;
-                self.current = end;
+        // we loop here in case we find a new line or a whitespace
+        // since the iterator should not yield them, and we should not yield `None`
+        // we just continue to the next token and yield that
+        loop {
+            break match Self::next_token_from_string(content) {
+                Some((size, kind)) => {
+                    let start = self.current;
+                    let end = start + size;
+                    self.current = end;
 
-                Some(Token {
-                    literal: content[..end].to_string(),
-                    line: self.line,
-                    start,
-                    end,
-                    kind,
-                })
+                    // if the next token is a new line or a whitespace
+                    // we should not yield them and just continue
+                    // to the next iteration
+                    if kind == TokenKind::NewLine {
+                        self.line += 1;
+                        continue;
+                    }
+                    if kind == TokenKind::WhiteSpace {
+                        continue;
+                    }
+
+                    Some(Token {
+                        literal: content[..end].to_string(),
+                        line: self.line,
+                        start,
+                        end,
+                        kind,
+                    })
+                }
+                None => None,
             }
-            None => None,
         }
     }
 }

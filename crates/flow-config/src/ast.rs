@@ -1,89 +1,95 @@
-use std::borrow::Cow;
-use std::num::ParseIntError;
-
-use thiserror::Error;
-
 use crate::lexer::{Lexer, Token, TokenKind};
 use flow_core::Key;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Requirement {
-    Required,
-    NotRequired
+
+trait Visitor<T> {
+    type Ret;
+    fn visit(&self, value: &T) -> Self::Ret;
 }
 
-#[derive(Error, Debug)]
-pub enum TokenNodeError {
-    #[error(transparent)]
-    ParseIntError(#[from] ParseIntError),
-
-    #[error("issue parsing token, expected next token ")]
-    ExpectedNextToken {
-        expected: TokenKind,
-        found: Token
+trait VisitorAccept {
+    fn accept<V>(&self, visitor: &V) -> V::Ret
+    where
+        V: Visitor<Self>,
+        Self: Sized
+    {
+        visitor.visit(self)
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct FlowNumber {
-    value: usize,
-}
+pub struct PrintVisitor;
 
-#[derive(Debug, Clone)]
-pub struct FlowString {
-    value: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct FlowKey {
-    key: Key,
-}
-
-#[derive(Debug, Clone)]
-pub enum FlowAction {
-    Spawn { prog: String, args: Vec<String> },
-}
-
-#[derive(Debug, Clone)]
-pub struct FlowBind<'a> {
-    key: Cow<'a, FlowKey>,
-    action: FlowAction,
-}
-
-pub enum TokenNode {
-    Body(Vec<TokenNode>),
-    Key(FlowKey),
-    String(FlowString),
-    Number(FlowNumber),
-}
-
-impl TokenNode {
-    fn try_from_lexer(lexer: Lexer) -> Result<Vec<TokenNode>, TokenNodeError> {
-        let mut nodes = Vec::new();
-        let mut lex_iter = lexer.iter();
-
-        while let Some(token) = lex_iter.next() {
-            match token.kind() {
-                TokenKind::Bind => {
-                    todo!()
-                }
-                _ => todo!()
-            }
+impl Visitor<Expr> for PrintVisitor {
+    type Ret = String;
+    fn visit(&self, value: &Expr) -> Self::Ret {
+        match value {
+            Expr::Literal(inner) => inner.accept(self),
+            Expr::Binary(inner) => inner.accept(self),
+            _ => todo!()
         }
-        Ok(nodes)
     }
 }
 
-pub struct AstRoot(TokenNode);
-
-impl AstRoot {
-    pub fn from_lexer<'a>(lex: Lexer) -> Result<AstRoot, TokenNodeError> {
-        let nodes = TokenNode::try_from_lexer(lex)?;
-        Ok(AstRoot(TokenNode::Body(nodes)))
+impl Visitor<Binary> for PrintVisitor {
+    type Ret = String;
+    fn visit(&self, value: &Binary) -> Self::Ret {
+        let mut buffer = String::with_capacity(16);
+        buffer.push('(');
+        buffer.push_str(value.operator.literal());
+        buffer.push(' ');
+        buffer.push_str(&value.left.accept(self));
+        buffer.push(' ');
+        buffer.push_str(&value.right.accept(self));
+        buffer.push(')');
+        buffer
     }
 }
+
+impl Visitor<Literal> for PrintVisitor {
+    type Ret = String;
+    fn visit(&self, value: &Literal) -> Self::Ret {
+        value.token.literal().into()
+    }
+}
+
+#[derive(Debug)]
+struct Binary {
+    left: Expr,
+    operator: Token,
+    right: Expr
+}
+
+#[derive(Debug)]
+struct Literal {
+    token: Token
+}
+
+#[derive(Debug)]
+enum Expr {
+    Binary(Box<Binary>),
+    Literal(Literal)
+}
+
+impl VisitorAccept for Binary {}
+impl VisitorAccept for Literal {}
+impl VisitorAccept for Expr {}
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_print_visitor() {
+        let ast = Expr::Binary(Box::new(Binary {
+            left: Expr::Literal(Literal {
+                token: Token::new("55".to_string(), 1, 0, 0, TokenKind::Number),
+            }),
+            operator: Token::new("*".to_string(), 1, 0, 0, TokenKind::Star),
+            right: Expr::Literal(Literal {
+                token: Token::new("77".to_string(), 1, 0, 0, TokenKind::Number),
+            })
+        }));
+        assert_eq!(ast.accept(&PrintVisitor), "(* 55 77)");
+    }
 }
