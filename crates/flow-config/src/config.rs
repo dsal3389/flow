@@ -1,18 +1,8 @@
-use std::fs::read_to_string;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use futures::Stream;
-
-use super::lexer::Lexer;
-use super::profile::ProfileContext;
-
-pub struct ConfigParser {
-    lexer: Lexer,
-}
 
 pub struct Config {
-    lex: Lexer,
 }
 
 impl Config {
@@ -22,8 +12,6 @@ impl Config {
     where
         P: AsRef<Path>,
     {
-        let content = read_to_string(path.as_ref())?;
-        let lex = Lexer::new(content);
-        Ok(Config { lex })
+        todo!()
     }
 }

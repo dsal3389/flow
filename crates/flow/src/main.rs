@@ -4,9 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
-use flow_config::profile::{Keybind, ProfileContext};
-use flow_config::{Config, ConfigParser};
 use flow_core::FlowConnection;
+use flow_config::Config;
 
 mod wm;
 

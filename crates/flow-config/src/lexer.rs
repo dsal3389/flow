@@ -1,5 +1,4 @@
 
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum TokenKind {
     Dot,
@@ -7,6 +6,19 @@ pub(crate) enum TokenKind {
     Plus,
     Star,
     Minus,
+    Equal,
+    EqualEqual,
+    NotEqual,
+    Greater,
+    Less,
+    GreaterThen,
+    LessThen,
+    Bang,
+
+    LeftParen,
+    RightParen,
+    LeftBrace,
+    RightBrace,
 
     // the whitespace and newline token kind is used internally by the lexer
     // it is not yielded by the lexer iterator
@@ -20,6 +32,7 @@ pub(crate) enum TokenKind {
 
     // keywords
     Bind,
+    If,
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +60,15 @@ impl Token {
         self.kind.clone()
     }
 
+    /// return the token line
+    pub(crate) fn line(&self) -> usize {
+        self.line
+    }
+
+    pub(crate) fn span(&self) -> (usize, usize) {
+        (self.start, self.end)
+    }
+
     /// returns the token literal value
     pub(crate) fn literal(&self) -> &str {
         &self.literal
@@ -70,15 +92,25 @@ impl<'a> LexerIter<'a> {
             return None;
         }
 
+        // peekable iterator will allow to check if the next
+        // character is of some sort without consuming the character
+        let mut chars = content.chars().peekable();
+
         // since we already checked that the string is not empty
         // it is safe to unwrap and expect at least 1 char
-        match content.chars().next().unwrap() {
+        match chars.next().unwrap() {
+            '(' => Some((1, TokenKind::LeftBrace)),
+            ')' => Some((1, TokenKind::RightBrace)),
             '.' => Some((1, TokenKind::Dot)),
             ',' => Some((1, TokenKind::Comma)),
             '+' => Some((1, TokenKind::Plus)),
             '-' => Some((1, TokenKind::Minus)),
             '*' => Some((1, TokenKind::Star)),
             '\n' => Some((1, TokenKind::NewLine)),
+            '{' => Some((1, TokenKind::LeftBrace)),
+            '}' => Some((1, TokenKind::RightBrace)),
+            '(' => Some((1, TokenKind::LeftParen)),
+            ')' => Some((1, TokenKind::RightParen)),
             ' ' | '\r' => {
                 let count = content
                     .chars()
@@ -86,9 +118,22 @@ impl<'a> LexerIter<'a> {
                     .count();
                 Some((count, TokenKind::WhiteSpace))
             }
+            '=' => {
+                if chars.next_if(|c| *c == '=').is_some() {
+                    Some((2, TokenKind::EqualEqual))
+                } else {
+                    Some((1, TokenKind::Equal))
+                }
+            },
+            '!' => {
+                if chars.next_if(|c| *c == '=').is_some() {
+                    Some((2, TokenKind::NotEqual))
+                } else {
+                    Some((1, TokenKind::Bang))
+                }
+            }
             '0'..'9' => {
-                let count = content
-                    .chars()
+                let count = chars
                     .take_while(|c| matches!(c, '0'..'9'))
                     .count();
                 Some((count, TokenKind::Number))
@@ -102,6 +147,7 @@ impl<'a> LexerIter<'a> {
                 // TODO:  optimize with some hash table or something
                 let token_kind = match identifier.as_str() {
                     "bind" => TokenKind::Bind,
+                    "if" => TokenKind::If,
                     _ => TokenKind::Identifier,
                 };
                 Some((identifier.len(), token_kind))
