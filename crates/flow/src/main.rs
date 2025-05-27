@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
-use flow_core::FlowConnection;
 use flow_config::Config;
+use flow_core::FlowConnection;
 
 mod wm;
 

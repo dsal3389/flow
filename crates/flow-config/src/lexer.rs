@@ -1,3 +1,10 @@
+pub trait LexerIterContext: Iterator<Item = Token> {
+    /// returns the current line the lexer iterator is at
+    fn line(&self) -> usize;
+
+    /// returns the current cursor position the lexer is at
+    fn current(&self) -> usize;
+}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum TokenKind {
@@ -23,16 +30,22 @@ pub(crate) enum TokenKind {
     // the whitespace and newline token kind is used internally by the lexer
     // it is not yielded by the lexer iterator
     WhiteSpace,
+    Comment,
     NewLine,
 
     // literals
     String,
+    Char,
     Number,
     Identifier,
 
+    Reference,
+
     // keywords
     Bind,
-    If,
+    Shift,
+    Alt,
+    Unknown,
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +58,13 @@ pub(crate) struct Token {
 }
 
 impl Token {
-    pub(crate) fn new(literal: String, line: usize, start: usize, end: usize, kind: TokenKind) -> Token {
+    pub(crate) fn new(
+        literal: String,
+        line: usize,
+        start: usize,
+        end: usize,
+        kind: TokenKind,
+    ) -> Token {
         Token {
             literal,
             line,
@@ -56,20 +75,24 @@ impl Token {
     }
 
     /// returns the token kind
+    #[inline]
     pub(crate) fn kind(&self) -> TokenKind {
         self.kind.clone()
     }
 
-    /// return the token line
+    /// return the line the token is at
+    #[inline]
     pub(crate) fn line(&self) -> usize {
         self.line
     }
 
+    #[inline]
     pub(crate) fn span(&self) -> (usize, usize) {
         (self.start, self.end)
     }
 
     /// returns the token literal value
+    #[inline]
     pub(crate) fn literal(&self) -> &str {
         &self.literal
     }
@@ -98,9 +121,7 @@ impl<'a> LexerIter<'a> {
 
         // since we already checked that the string is not empty
         // it is safe to unwrap and expect at least 1 char
-        match chars.next().unwrap() {
-            '(' => Some((1, TokenKind::LeftBrace)),
-            ')' => Some((1, TokenKind::RightBrace)),
+        match chars.next()? {
             '.' => Some((1, TokenKind::Dot)),
             ',' => Some((1, TokenKind::Comma)),
             '+' => Some((1, TokenKind::Plus)),
@@ -114,9 +135,32 @@ impl<'a> LexerIter<'a> {
             ' ' | '\r' => {
                 let count = content
                     .chars()
-                    .take_while(|c| matches!(c, ' ' | '\r' | '\n'))
+                    .take_while(|c| matches!(c, ' ' | '\r'))
                     .count();
-                Some((count, TokenKind::WhiteSpace))
+                Some((count + 1, TokenKind::WhiteSpace))
+            }
+            '/' => {
+                // if the next token is alos a `/`, we cosume it and it means
+                // it is a comment line, so we read the whole line
+                if chars.next_if(|c| *c == '/').is_some() {
+                    let comment = chars.take_while(|c| *c != '\n').count();
+                    Some((comment + 2, TokenKind::Comment))
+                } else {
+                    Some((1, TokenKind::Unknown))
+                }
+            }
+            '\'' => {
+                // there is probably a better way to take the literal without duplicating
+                // this code, but this will do for now
+                let identifier_count = chars
+                    .take_while(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '_'))
+                    .count();
+
+                if identifier_count == 0 {
+                    Some((1, TokenKind::Unknown))
+                } else {
+                    Some((identifier_count + 1, TokenKind::Reference))
+                }
             }
             '=' => {
                 if chars.next_if(|c| *c == '=').is_some() {
@@ -124,7 +168,7 @@ impl<'a> LexerIter<'a> {
                 } else {
                     Some((1, TokenKind::Equal))
                 }
-            },
+            }
             '!' => {
                 if chars.next_if(|c| *c == '=').is_some() {
                     Some((2, TokenKind::NotEqual))
@@ -132,27 +176,30 @@ impl<'a> LexerIter<'a> {
                     Some((1, TokenKind::Bang))
                 }
             }
-            '0'..'9' => {
-                let count = chars
-                    .take_while(|c| matches!(c, '0'..'9'))
-                    .count();
+            '0'..='9' => {
+                let count = chars.take_while(|c| matches!(c, '0'..='9')).count() + 1;
                 Some((count, TokenKind::Number))
             }
-            'a'..'z' | 'A'..'Z' | '_' => {
+            'a'..='z' | 'A'..='Z' | '_' => {
                 let identifier = content
                     .chars()
-                    .take_while(|c| matches!(c, 'a' .. 'z' | 'A' .. 'Z' | '_'))
+                    .take_while(|c| matches!(c, 'a' ..= 'z' | 'A' ..= 'Z' | '_'))
                     .collect::<String>();
 
-                // TODO:  optimize with some hash table or something
+                // we only catched a single char, the token kind is... well... a char
+                if identifier.len() == 0 {
+                    return Some((1, TokenKind::Char));
+                }
+
                 let token_kind = match identifier.as_str() {
                     "bind" => TokenKind::Bind,
-                    "if" => TokenKind::If,
+                    "shift" => TokenKind::Shift,
+                    "alt" => TokenKind::Alt,
                     _ => TokenKind::Identifier,
                 };
-                Some((identifier.len(), token_kind))
+                Some((identifier.len() + 1, token_kind))
             }
-            _ => todo!(),
+            _ => Some((1, TokenKind::Unknown))
         }
     }
 }
@@ -186,7 +233,7 @@ impl<'a> Iterator for LexerIter<'a> {
                         self.line += 1;
                         continue;
                     }
-                    if kind == TokenKind::WhiteSpace {
+                    if matches!(kind, TokenKind::WhiteSpace | TokenKind::Comment) {
                         continue;
                     }
 
@@ -199,8 +246,20 @@ impl<'a> Iterator for LexerIter<'a> {
                     })
                 }
                 None => None,
-            }
+            };
         }
+    }
+}
+
+impl LexerIterContext for LexerIter<'_> {
+    #[inline]
+    fn line(&self) -> usize {
+        self.line
+    }
+
+    #[inline]
+    fn current(&self) -> usize {
+        self.current
     }
 }
 
@@ -216,6 +275,7 @@ impl Lexer {
 
     /// returns a new type that implements iterator, each iteration
     /// yields new token
+    #[inline]
     pub(crate) fn iter(&self) -> impl Iterator<Item = Token> {
         self.into_iter()
     }

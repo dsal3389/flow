@@ -1,5 +1,5 @@
 mod ast;
-mod lexer;
 mod config;
+mod lexer;
 
 pub use config::Config;

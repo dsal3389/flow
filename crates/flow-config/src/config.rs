@@ -1,9 +1,7 @@
 use std::io;
 use std::path::Path;
 
-
-pub struct Config {
-}
+pub struct Config {}
 
 impl Config {
     pub const FILENAME: &str = "flow.cfg";
