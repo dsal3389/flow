@@ -26,6 +26,7 @@ pub(crate) enum TokenKind {
     RightParen,
     LeftBrace,
     RightBrace,
+    Tick,  // like rust, a single `'`
 
     // the whitespace and newline token kind is used internally by the lexer
     // it is not yielded by the lexer iterator
@@ -38,8 +39,6 @@ pub(crate) enum TokenKind {
     Char,
     Number,
     Identifier,
-
-    Reference,
 
     // keywords
     Bind,
@@ -109,7 +108,7 @@ pub(crate) struct LexerIter<'a> {
 
 impl<'a> LexerIter<'a> {
     /// returns the first token from the given string and the
-    /// token literal length
+    /// token end position relative to the start of the content
     fn next_token_from_string(content: &str) -> Option<(usize, TokenKind)> {
         if content.is_empty() {
             return None;
@@ -121,7 +120,7 @@ impl<'a> LexerIter<'a> {
 
         // since we already checked that the string is not empty
         // it is safe to unwrap and expect at least 1 char
-        match chars.next()? {
+        match chars.next().unwrap() {
             '.' => Some((1, TokenKind::Dot)),
             ',' => Some((1, TokenKind::Comma)),
             '+' => Some((1, TokenKind::Plus)),
@@ -132,12 +131,13 @@ impl<'a> LexerIter<'a> {
             '}' => Some((1, TokenKind::RightBrace)),
             '(' => Some((1, TokenKind::LeftParen)),
             ')' => Some((1, TokenKind::RightParen)),
+            '\'' => Some((1, TokenKind::Tick)),
             ' ' | '\r' => {
                 let count = content
                     .chars()
                     .take_while(|c| matches!(c, ' ' | '\r'))
                     .count();
-                Some((count + 1, TokenKind::WhiteSpace))
+                Some((count, TokenKind::WhiteSpace))
             }
             '/' => {
                 // if the next token is alos a `/`, we cosume it and it means
@@ -147,19 +147,6 @@ impl<'a> LexerIter<'a> {
                     Some((comment + 2, TokenKind::Comment))
                 } else {
                     Some((1, TokenKind::Unknown))
-                }
-            }
-            '\'' => {
-                // there is probably a better way to take the literal without duplicating
-                // this code, but this will do for now
-                let identifier_count = chars
-                    .take_while(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '_'))
-                    .count();
-
-                if identifier_count == 0 {
-                    Some((1, TokenKind::Unknown))
-                } else {
-                    Some((identifier_count + 1, TokenKind::Reference))
                 }
             }
             '=' => {
@@ -177,8 +164,8 @@ impl<'a> LexerIter<'a> {
                 }
             }
             '0'..='9' => {
-                let count = chars.take_while(|c| matches!(c, '0'..='9')).count() + 1;
-                Some((count, TokenKind::Number))
+                let count = chars.take_while(|c| matches!(c, '0'..='9')).count();
+                Some((count + 1, TokenKind::Number))
             }
             'a'..='z' | 'A'..='Z' | '_' => {
                 let identifier = content
@@ -187,7 +174,7 @@ impl<'a> LexerIter<'a> {
                     .collect::<String>();
 
                 // we only catched a single char, the token kind is... well... a char
-                if identifier.len() == 0 {
+                if identifier.len() == 1 {
                     return Some((1, TokenKind::Char));
                 }
 
@@ -197,7 +184,7 @@ impl<'a> LexerIter<'a> {
                     "alt" => TokenKind::Alt,
                     _ => TokenKind::Identifier,
                 };
-                Some((identifier.len() + 1, token_kind))
+                Some((identifier.len(), token_kind))
             }
             _ => Some((1, TokenKind::Unknown))
         }
@@ -207,47 +194,50 @@ impl<'a> LexerIter<'a> {
 impl<'a> Iterator for LexerIter<'a> {
     type Item = Token;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current >= self.content.len() {
-            return None;
-        }
-
-        // get all the content from the current index
-        // the `self.current` is updated each time we find a token
-        // and we will always point to the next token string
-        let content = &self.content[self.current..];
-
         // we loop here in case we find a new line or a whitespace
-        // since the iterator should not yield them, and we should not yield `None`
-        // we just continue to the next token and yield that
-        loop {
-            break match Self::next_token_from_string(content) {
-                Some((size, kind)) => {
-                    let start = self.current;
-                    let end = start + size;
-                    self.current = end;
+        // since the iterator should not yield them, and we should not yield `None` in that
+        // case because we might have more tokens to yield, we just continue to the next token
+        while self.current < self.content.len() {
+            // get all the content from the current index
+            // the `self.current` is updated each time we find a token
+            // and we will always point to the next token string
+            let content = &self.content[self.current..];
 
-                    // if the next token is a new line or a whitespace
-                    // we should not yield them and just continue
-                    // to the next iteration
-                    if kind == TokenKind::NewLine {
-                        self.line += 1;
-                        continue;
-                    }
-                    if matches!(kind, TokenKind::WhiteSpace | TokenKind::Comment) {
-                        continue;
-                    }
+            let (size, kind) = Self::next_token_from_string(content)?;
 
-                    Some(Token {
-                        literal: content[..end].to_string(),
-                        line: self.line,
-                        start,
-                        end,
-                        kind,
-                    })
-                }
-                None => None,
-            };
-        }
+            // save the start and the end state because
+            // we need to for when we create the Token type
+            let start = self.current;
+            let end = start + size;
+
+            // update the current value for the next iteration
+            // to point to the next token
+            self.current = end;
+
+            // if the next token is a new line or a whitespace
+            // we should not yield them and just continue
+            // to the next iteration
+            if kind == TokenKind::NewLine {
+                self.line += 1;
+                continue;
+            }
+            if matches!(kind, TokenKind::WhiteSpace | TokenKind::Comment) {
+                continue;
+            }
+
+            return Some(Token {
+                literal: content[..size].to_string(),
+                line: self.line,
+                start,
+                end,
+                kind,
+            })
+        };
+
+        // if we couldn't find any tokens to yield in the
+        // while loop, it is probably because we all that thats left
+        // were none yieldable tokens
+        None
     }
 }
 
@@ -302,8 +292,24 @@ mod tests {
     #[test]
     fn test_lexer_bind_parse() {
         let lexer = Lexer::new("bind x y".to_string());
-        let token = lexer.iter().next().expect("expected first token");
-        assert_eq!(token.kind(), TokenKind::Bind);
+        let mut iter = lexer.iter();
+
+        let bind_token = iter.next().expect("expected left paren token");
+        assert_eq!(bind_token.kind(), TokenKind::Bind);
+        assert_eq!(bind_token.literal(), "bind");
+
+        assert_eq!(iter.next().expect("expected first char token").kind(), TokenKind::Char);
+        assert_eq!(iter.next().expect("expected second char token").kind(), TokenKind::Char);
+    }
+
+    #[test]
+    fn test_lexer_single_chars_parse() {
+        let lexer = Lexer::new("()'".to_string());
+        let mut iter = lexer.iter();
+
+        assert_eq!(iter.next().expect("expected left paren token").kind(), TokenKind::LeftParen);
+        assert_eq!(iter.next().expect("expected right paren token").kind(), TokenKind::RightParen);
+        assert_eq!(iter.next().expect("expected tick token").kind(), TokenKind::Tick);
     }
 
     #[test]
