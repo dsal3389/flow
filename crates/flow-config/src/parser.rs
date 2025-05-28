@@ -404,20 +404,19 @@ mod tests {
         assert_eq!(parser.parse(), Ok(Body { stmts: vec![Stmt::Empty] }));
     }
 
-    // #[test]
-    // fn test_str_to_ast() {
-    //     let lexer = Lexer::new("(bind x + z ())".to_string());
-    //     let mut parser = Parser::new(&lexer);
+    #[test]
+    fn test_str_to_ast() {
+        let lexer = Lexer::new("(bind x + 'z ())".to_string());
+        let mut parser = Parser::new(&lexer);
 
-    //     assert_eq!(parser.parse(), Ok(Body{ stmts: vec![
-    //         Stmt::Bind(Box::new(BindStmt {
-    //             exprs: vec![
-    //                 Expr::Literal(Literal::Char('x')),
-    //                 Expr::Literal(Literal::Char('z')),
-    //                 //Expr::Reference(Reference { name: "z".to_string() })
-    //             ],
-    //             stmt: Stmt::Empty
-    //         }))
-    //     ]}));
-    // }
+        assert_eq!(parser.parse(), Ok(Body{ stmts: vec![
+            Stmt::Bind(Box::new(BindStmt {
+                exprs: vec![
+                    Expr::Literal(Literal::Char('x')),
+                    Expr::Reference(Reference { name: "z".to_string() })
+                ],
+                stmt: Stmt::Empty
+            }))
+        ]}));
+    }
 }

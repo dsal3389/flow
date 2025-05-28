@@ -1,4 +1,4 @@
-mod ast;
+mod parser;
 mod config;
 mod lexer;
 

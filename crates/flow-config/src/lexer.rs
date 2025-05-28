@@ -102,7 +102,6 @@ impl Token {
 pub(crate) struct LexerIter<'a> {
     content: &'a str,
     current: usize,
-    start: usize,
     line: usize,
 }
 
@@ -279,7 +278,6 @@ impl<'a> IntoIterator for &'a Lexer {
         LexerIter {
             content: &self.content,
             current: 0,
-            start: 0,
             line: 1,
         }
     }
@@ -316,6 +314,7 @@ mod tests {
     fn test_lexer_int_parse() {
         let lexer = Lexer::new("777 text".to_string());
         let token = lexer.iter().next().expect("expected first token");
+
         assert_eq!(token.kind(), TokenKind::Number);
         assert_eq!(token.literal(), "777")
     }
