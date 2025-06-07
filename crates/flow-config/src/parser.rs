@@ -1,9 +1,10 @@
 ///
+
 /// Stmt = Bind(Expr*, Stmt)
 ///      | Assign(Expr name, Expr value)
 ///
 /// Expr = Literal
-///      | Reference(String)
+///      | Name(Name)
 ///
 /// Literal = String | Char | Number | Pixels
 ///
@@ -12,7 +13,7 @@ use std::fmt;
 
 use thiserror::Error;
 
-use crate::lexer::{LexerIterContext, Token, TokenKind};
+use crate::lexer::{LexerError, LexerIterContext, Token, TokenKind};
 
 type Result<T> = std::result::Result<T, ParseError>;
 
@@ -25,6 +26,16 @@ pub struct ParseError {
     span: Option<(usize, usize)>,
     /// a helpful message that will explain the issue
     message: String,
+}
+
+impl From<LexerError> for ParseError {
+    fn from(value: LexerError) -> ParseError {
+        ParseError {
+            line: value.line,
+            span: value.span,
+            message: value.reason,
+        }
+    }
 }
 
 impl fmt::Display for ParseError {
@@ -45,19 +56,13 @@ struct Binary {
 
 impl fmt::Display for Binary {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "({} {} {})",
-            self.operator,
-            self.left,
-            self.right
-        )
+        write!(f, "({} {} {})", self.operator, self.left, self.right)
     }
 }
 
 #[derive(Debug, Eq, PartialEq)]
 struct Reference {
-    name: String
+    name: String,
 }
 
 impl fmt::Display for Reference {
@@ -121,11 +126,23 @@ impl fmt::Display for Assign {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+struct Name {
+    name: String,
+}
+
+impl fmt::Display for Name {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "'{}", self.name)
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
 enum Expr {
+    Name(Name),
     Binary(Box<Binary>),
     Literal(Literal),
     Assign(Box<Assign>),
-    Reference(Reference)
+    Reference(Reference),
 }
 
 impl Expr {
@@ -153,10 +170,11 @@ impl Expr {
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let v: &dyn fmt::Display = match self {
+            Self::Name(inner) => inner,
             Self::Binary(inner) => inner,
             Self::Literal(inner) => inner,
             Self::Assign(inner) => inner,
-            Self::Reference(inner) => inner
+            Self::Reference(inner) => inner,
         };
         write!(f, "{}", v)
     }
@@ -187,12 +205,35 @@ enum Stmt {
     Empty,
 }
 
+/// a simple macro that is used only by the `Parser` to check
+/// the kind of the token, if the token is not of the expected kind, a `ParseError`
+/// is returned, if the token is of the expected kind, the token is returned, this
+/// ```rs
+/// // assume `next` returns an Option<Result<Token, LexerError>>
+/// let token = self.next().and_then(|token| expect_token_kind!(token?, TokenKind::LeftParen))?;
+/// ```
+macro_rules! expect_token_kind {
+    ($token:expr, $kinds:pat $(,)?) => {
+        expect_token_kind!($token, $kinds, "unexpected next token".to_string())
+    };
+    ($token:expr, $kinds:pat $(,)?, $err_message:expr) => {
+        match $token.kind() {
+            $kinds => Ok($token),
+            _ => Err(ParseError {
+                line: $token.line(),
+                span: Some($token.span()),
+                message: $err_message,
+            }),
+        }
+    };
+}
+
 pub(crate) struct Parser<I>
 where
     I: LexerIterContext,
 {
     iter: I,
-    peeked: Option<I::Item>,
+    peeked: Option<Result<Token>>,
 }
 
 impl<I> Parser<I>
@@ -209,6 +250,47 @@ where
         }
     }
 
+    /// returns the next token, if None is returned
+    /// it means there is no next token
+    #[inline]
+    fn next(&mut self) -> Option<Result<Token>> {
+        match self.peeked.take() {
+            Some(token) => Some(token),
+            None => self.iter.next().map(|next| next.map_err(|err| err.into())),
+        }
+    }
+
+    /// return the next token, but returns an error if
+    /// there is no next token
+    #[inline]
+    fn expect_next(&mut self) -> Result<Result<Token>> {
+        match self.next() {
+            Some(token) => Ok(token),
+            None => Err(ParseError {
+                span: None,
+                line: self.iter.line(),
+                message: "unexpected eof".to_string(),
+            }),
+        }
+    }
+
+    /// peeks to the next token, returns None
+    /// if there is no next value
+    #[inline]
+    fn peek(&mut self) -> Option<&Result<Token>> {
+        if self.peeked.is_some() {
+            self.peeked.as_ref()
+        } else {
+            self.peeked = self.next();
+            self.peeked.as_ref()
+        }
+    }
+
+    #[inline]
+    fn eof(&mut self) -> bool {
+        self.peek().is_none()
+    }
+
     pub fn parse(&mut self) -> Result<Body> {
         let mut stmts = Vec::new();
         while !self.eof() {
@@ -218,177 +300,37 @@ where
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt> {
-        self.check_next(
-            TokenKind::LeftParen,
-            "expected open paren `(` to parse statement",
-        )?;
+        let _ = self
+            .expect_next()?
+            .and_then(|token| expect_token_kind!(token, TokenKind::LeftParen))?;
 
-        // if we have the closing parent right after the open paren
-        // it means it is an empty statement
-        if self.is_next(TokenKind::RightParen) {
-            self.next();
-            return Ok(Stmt::Empty);
-        }
-
-        let stmt = match self.expect_next(None)?.kind() {
-            TokenKind::Bind => {
-                let bind_stmt = Box::new(self.parse_bind_stmt()?);
-                Stmt::Bind(bind_stmt)
-            }
+        // the first token in the statement should tell us
+        // what is the kind of the statement, and we call the correct
+        // parser based on the given statement
+        let stmt = match self.expect_next()??.kind() {
+            TokenKind::RightParen => return Ok(Stmt::Empty),
+            TokenKind::Bind => self.parse_bind_stmt(),
             _ => todo!(),
         };
 
-        self.check_next(
-            TokenKind::RightParen,
-            "expected a closing paren `)` for statement"
-        )?;
-        Ok(stmt)
+        let _ = self
+            .expect_next()?
+            .and_then(|token| expect_token_kind!(token, TokenKind::RightParen))?;
+        stmt
     }
 
-    fn parse_expr(&mut self) -> Result<Expr> {
-        let token = self.expect_next(Some("expected expression"))?;
-        let expr = match token.kind() {
-            TokenKind::Tick => {
-                let identifier = self.check_next(TokenKind::Identifier, "expected an identifier after tick `'`")?;
-                Expr::Reference(Reference { name: identifier.literal().to_string() })
-            },
-            // it should be safe to unwrap here because we expect at least 1 char
-            TokenKind::Char => Expr::Literal(Literal::Char(token.literal().chars().next().unwrap())),
-            _ => todo!()
-        };
-        Ok(expr)
-    }
-
-    fn parse_bind_stmt(&mut self) -> Result<BindStmt> {
-        let mut exprs = Vec::new();
-
-        while !self.eof() {
-            // expressions here are expected to be literals or references, those are the keys
-            // for the binding, anything other then that is not expected
-            //
-            // examples for the parse expressions here are
-            // (bind x + y + z ...)
-            //       ^   ^   ^
-            let expr = self.parse_expr().and_then(|expr| {
-                let result = match &expr {
-                    Expr::Literal(literal) => {
-                        if !literal.is_char() {
-                            Err(ParseError {
-                                span: None,
-                                line: self.iter.line(),
-                                message: "".to_string()
-                            })
-                        } else {
-                            Ok(())
-                        }
-                    },
-                    Expr::Reference(_) => Ok(()),
-                    // TODO: display the line and span from the expr token
-                    _ => Err(ParseError {
-                        span: None,
-                        line: self.iter.line(),
-                        message: "unsupported expression on bind".to_string(),
-                    })
-                };
-                result.map(|()| expr)
-            })?;
-
-            exprs.push(expr);
-
-            // the next value is peeked because if the token is
-            // of type LeftParen we don't want to consume
-            //
-            // it is okay we don't have `else` handler here incase we don't have next token
-            // the while loop condition will break and an expression is expected
-            if let Some(token) = self.peek() {
-                match token.kind() {
-                    TokenKind::LeftParen => break,
-                    TokenKind::Plus => {
-                        self.next();
-                    },
-                    _ => {
-                        return Err(ParseError {
-                            span: None,
-                            line: self.iter.line(),
-                            message: "unexpected token while parsing bind statement, expected a `+` or start of another block".to_string(),
-                        })
-                    }
-                };
-            };
-        }
-
-        let stmt = self.parse_stmt()?;
-        Ok(BindStmt { exprs, stmt })
-    }
-
-    /// returnes the next item from the iterator
-    fn next(&mut self) -> Option<I::Item> {
-        if self.peeked.is_some() {
-            self.peeked.take()
-        } else {
-            self.iter.next()
-        }
-    }
-
-    /// returns a boolean value indicating if the next token
-    /// is of the given type, if there is no next token `false` will be returned
-    #[inline]
-    fn is_next(&mut self, kind: TokenKind) -> bool {
-        self.peek().is_some_and(|token| token.kind() == kind)
-    }
-
-    /// tries to take the next token, if there is no token or the token is not what
-    /// was expected, a ParseError is returned
-    #[must_use]
-    fn check_next(&mut self, kind: TokenKind, message: &str) -> Result<I::Item> {
-        self.expect_next(Some(message)).and_then(|token| {
-            if token.kind() == kind {
-                Ok(token)
-            } else {
-                Err(ParseError {
-                    line: token.line(),
-                    span: Some(token.span()),
-                    message: message.to_string(),
-                })
-            }
-        })
-    }
-
-    /// like regular next but returns an error if there is no
-    /// next value, appends also the given message to the error info
-    #[must_use]
-    fn expect_next(&mut self, message: Option<&str>) -> Result<I::Item> {
-        self.next().ok_or(ParseError {
-            span: None,
-            line: self.iter.line(),
-            message: format!("unexpected EOF {}", message.unwrap_or_default())
-        })
-    }
-
-    /// peeks the next element in the iterator and returns it, if there is nothing to peek
-    /// then None is returned
-    fn peek(&mut self) -> Option<&I::Item> {
-        if self.peeked.is_none() {
-            self.peeked = self.iter.next();
-        }
-        self.peeked.as_ref()
-    }
-
-    /// returns a boolean value indicating if the
-    /// parser has reached the end and there are no more tokens to process
-    #[inline]
-    fn eof(&mut self) -> bool {
-        self.peek().is_none()
+    fn parse_bind_stmt(&mut self) -> Result<Stmt> {
+        todo!()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::Lexer;
     use super::*;
+    use crate::lexer::Lexer;
 
     #[test]
-    fn test_print() {
+    fn test_ast_display() {
         let ast = Expr::Binary(Box::new(Binary {
             left: Expr::Literal(Literal::Number(55)),
             operator: "*".to_string(),
@@ -398,25 +340,37 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_stmt() {
+    fn test_ast_empty_stmt() {
         let lexer = Lexer::new("()".to_string());
         let mut parser = Parser::new(&lexer);
-        assert_eq!(parser.parse(), Ok(Body { stmts: vec![Stmt::Empty] }));
+        assert_eq!(
+            parser.parse(),
+            Ok(Body {
+                stmts: vec![Stmt::Empty]
+            })
+        );
     }
 
     #[test]
-    fn test_str_to_ast() {
+    fn test_ast_bind_stmt() {
         let lexer = Lexer::new("(bind x + 'z ())".to_string());
         let mut parser = Parser::new(&lexer);
 
-        assert_eq!(parser.parse(), Ok(Body{ stmts: vec![
-            Stmt::Bind(Box::new(BindStmt {
-                exprs: vec![
-                    Expr::Literal(Literal::Char('x')),
-                    Expr::Reference(Reference { name: "z".to_string() })
-                ],
-                stmt: Stmt::Empty
-            }))
-        ]}));
+        assert_eq!(
+            parser.parse(),
+            Ok(Body {
+                stmts: vec![Stmt::Bind(Box::new(BindStmt {
+                    exprs: vec![
+                        Expr::Name(Name {
+                            name: "x".to_string()
+                        }),
+                        Expr::Name(Name {
+                            name: "z".to_string()
+                        })
+                    ],
+                    stmt: Stmt::Empty
+                }))]
+            })
+        );
     }
 }

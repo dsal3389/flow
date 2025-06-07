@@ -1,4 +1,16 @@
-pub trait LexerIterContext: Iterator<Item = Token> {
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+#[error("lexer error: {}", reason)]
+pub struct LexerError {
+    pub(crate) line: usize,
+    pub(crate) span: Option<(usize, usize)>,
+    pub(crate) reason: String,
+}
+
+type Result<T> = std::result::Result<T, LexerError>;
+
+pub trait LexerIterContext: Iterator<Item = Result<Token>> {
     /// returns the current line the lexer iterator is at
     fn line(&self) -> usize;
 
@@ -26,7 +38,7 @@ pub(crate) enum TokenKind {
     RightParen,
     LeftBrace,
     RightBrace,
-    Tick,  // like rust, a single `'`
+    Tick, // like rust, a single `'`
 
     // the whitespace and newline token kind is used internally by the lexer
     // it is not yielded by the lexer iterator
@@ -108,7 +120,9 @@ pub(crate) struct LexerIter<'a> {
 impl<'a> LexerIter<'a> {
     /// returns the first token from the given string and the
     /// token end position relative to the start of the content
-    fn next_token_from_string(content: &str) -> Option<(usize, TokenKind)> {
+    fn next_token_from_string(
+        content: &str,
+    ) -> Option<std::result::Result<(usize, TokenKind), String>> {
         if content.is_empty() {
             return None;
         }
@@ -120,51 +134,58 @@ impl<'a> LexerIter<'a> {
         // since we already checked that the string is not empty
         // it is safe to unwrap and expect at least 1 char
         match chars.next().unwrap() {
-            '.' => Some((1, TokenKind::Dot)),
-            ',' => Some((1, TokenKind::Comma)),
-            '+' => Some((1, TokenKind::Plus)),
-            '-' => Some((1, TokenKind::Minus)),
-            '*' => Some((1, TokenKind::Star)),
-            '\n' => Some((1, TokenKind::NewLine)),
-            '{' => Some((1, TokenKind::LeftBrace)),
-            '}' => Some((1, TokenKind::RightBrace)),
-            '(' => Some((1, TokenKind::LeftParen)),
-            ')' => Some((1, TokenKind::RightParen)),
-            '\'' => Some((1, TokenKind::Tick)),
+            '.' => Some(Ok((1, TokenKind::Dot))),
+            ',' => Some(Ok((1, TokenKind::Comma))),
+            '+' => Some(Ok((1, TokenKind::Plus))),
+            '-' => Some(Ok((1, TokenKind::Minus))),
+            '*' => Some(Ok((1, TokenKind::Star))),
+            '\n' => Some(Ok((1, TokenKind::NewLine))),
+            '{' => Some(Ok((1, TokenKind::LeftBrace))),
+            '}' => Some(Ok((1, TokenKind::RightBrace))),
+            '(' => Some(Ok((1, TokenKind::LeftParen))),
+            ')' => Some(Ok((1, TokenKind::RightParen))),
+            '\'' => {
+                if chars.next().is_some_and(|c| matches!(c, 'a'..='z' | 'A'..='Z')) {
+                    if chars.next().is_some_and(|c| c == '\'') {
+                        return Some(Ok((3, TokenKind::Char)));
+                    }
+                }
+                Some(Err("expected a char to be wrapped in signle quotes `'`".to_string()))
+            }
             ' ' | '\r' => {
                 let count = content
                     .chars()
                     .take_while(|c| matches!(c, ' ' | '\r'))
                     .count();
-                Some((count, TokenKind::WhiteSpace))
+                Some(Ok((count, TokenKind::WhiteSpace)))
             }
             '/' => {
                 // if the next token is alos a `/`, we cosume it and it means
                 // it is a comment line, so we read the whole line
                 if chars.next_if(|c| *c == '/').is_some() {
                     let comment = chars.take_while(|c| *c != '\n').count();
-                    Some((comment + 2, TokenKind::Comment))
+                    Some(Ok((comment + 2, TokenKind::Comment)))
                 } else {
-                    Some((1, TokenKind::Unknown))
+                    Some(Ok((1, TokenKind::Unknown)))
                 }
             }
             '=' => {
                 if chars.next_if(|c| *c == '=').is_some() {
-                    Some((2, TokenKind::EqualEqual))
+                    Some(Ok((2, TokenKind::EqualEqual)))
                 } else {
-                    Some((1, TokenKind::Equal))
+                    Some(Ok((1, TokenKind::Equal)))
                 }
             }
             '!' => {
                 if chars.next_if(|c| *c == '=').is_some() {
-                    Some((2, TokenKind::NotEqual))
+                    Some(Ok((2, TokenKind::NotEqual)))
                 } else {
-                    Some((1, TokenKind::Bang))
+                    Some(Ok((1, TokenKind::Bang)))
                 }
             }
             '0'..='9' => {
                 let count = chars.take_while(|c| matches!(c, '0'..='9')).count();
-                Some((count + 1, TokenKind::Number))
+                Some(Ok((count + 1, TokenKind::Number)))
             }
             'a'..='z' | 'A'..='Z' | '_' => {
                 let identifier = content
@@ -172,26 +193,21 @@ impl<'a> LexerIter<'a> {
                     .take_while(|c| matches!(c, 'a' ..= 'z' | 'A' ..= 'Z' | '_'))
                     .collect::<String>();
 
-                // we only catched a single char, the token kind is... well... a char
-                if identifier.len() == 1 {
-                    return Some((1, TokenKind::Char));
-                }
-
                 let token_kind = match identifier.as_str() {
                     "bind" => TokenKind::Bind,
                     "shift" => TokenKind::Shift,
                     "alt" => TokenKind::Alt,
                     _ => TokenKind::Identifier,
                 };
-                Some((identifier.len(), token_kind))
+                Some(Ok((identifier.len(), token_kind)))
             }
-            _ => Some((1, TokenKind::Unknown))
+            c => Some(Err(format!("unknown char, could not parse `{}`", c))),
         }
     }
 }
 
 impl<'a> Iterator for LexerIter<'a> {
-    type Item = Token;
+    type Item = Result<Token>;
     fn next(&mut self) -> Option<Self::Item> {
         // we loop here in case we find a new line or a whitespace
         // since the iterator should not yield them, and we should not yield `None` in that
@@ -202,7 +218,16 @@ impl<'a> Iterator for LexerIter<'a> {
             // and we will always point to the next token string
             let content = &self.content[self.current..];
 
-            let (size, kind) = Self::next_token_from_string(content)?;
+            let (size, kind) = match Self::next_token_from_string(content)? {
+                Ok(next) => next,
+                Err(err) => {
+                    return Some(Err(LexerError {
+                        span: Some((self.current, self.current + 1)),
+                        line: self.line,
+                        reason: err,
+                    }));
+                }
+            };
 
             // save the start and the end state because
             // we need to for when we create the Token type
@@ -224,14 +249,14 @@ impl<'a> Iterator for LexerIter<'a> {
                 continue;
             }
 
-            return Some(Token {
+            return Some(Ok(Token {
                 literal: content[..size].to_string(),
                 line: self.line,
                 start,
                 end,
                 kind,
-            })
-        };
+            }));
+        }
 
         // if we couldn't find any tokens to yield in the
         // while loop, it is probably because we all that thats left
@@ -265,14 +290,14 @@ impl Lexer {
     /// returns a new type that implements iterator, each iteration
     /// yields new token
     #[inline]
-    pub(crate) fn iter(&self) -> impl Iterator<Item = Token> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = Result<Token>> {
         self.into_iter()
     }
 }
 
 impl<'a> IntoIterator for &'a Lexer {
     type IntoIter = LexerIter<'a>;
-    type Item = Token;
+    type Item = Result<Token>;
 
     fn into_iter(self) -> Self::IntoIter {
         LexerIter {
@@ -292,37 +317,48 @@ mod tests {
         let lexer = Lexer::new("bind x y".to_string());
         let mut iter = lexer.iter();
 
-        let bind_token = iter.next().expect("expected left paren token");
+        let bind_token = iter.next().expect("expected left paren token").unwrap();
         assert_eq!(bind_token.kind(), TokenKind::Bind);
         assert_eq!(bind_token.literal(), "bind");
 
-        assert_eq!(iter.next().expect("expected first char token").kind(), TokenKind::Char);
-        assert_eq!(iter.next().expect("expected second char token").kind(), TokenKind::Char);
-    }
-
-    #[test]
-    fn test_lexer_single_chars_parse() {
-        let lexer = Lexer::new("()'".to_string());
-        let mut iter = lexer.iter();
-
-        assert_eq!(iter.next().expect("expected left paren token").kind(), TokenKind::LeftParen);
-        assert_eq!(iter.next().expect("expected right paren token").kind(), TokenKind::RightParen);
-        assert_eq!(iter.next().expect("expected tick token").kind(), TokenKind::Tick);
+        assert_eq!(
+            iter.next()
+                .expect("expected first char token")
+                .unwrap()
+                .kind(),
+            TokenKind::Identifier
+        );
+        assert_eq!(
+            iter.next()
+                .expect("expected second char token")
+                .unwrap()
+                .kind(),
+            TokenKind::Identifier
+        );
     }
 
     #[test]
     fn test_lexer_int_parse() {
         let lexer = Lexer::new("777 text".to_string());
-        let token = lexer.iter().next().expect("expected first token");
+        let token = lexer.iter().next().expect("expected first token").unwrap();
 
         assert_eq!(token.kind(), TokenKind::Number);
         assert_eq!(token.literal(), "777")
     }
 
     #[test]
+    fn test_lexer_char_parse() {
+        let lexer = Lexer::new("'c'".to_string());
+        let token = lexer.iter().next().expect("expected first token").unwrap();
+
+        assert_eq!(token.kind(), TokenKind::Char);
+        assert_eq!(token.literal(), "'c'");
+    }
+
+    #[test]
     fn test_lexer_identifier_parse() {
         let lexer = Lexer::new("identifier".to_string());
-        let token = lexer.iter().next().expect("expected first token");
+        let token = lexer.iter().next().expect("expected first token").unwrap();
         assert_eq!(token.kind(), TokenKind::Identifier);
         assert_eq!(token.literal(), "identifier");
     }
