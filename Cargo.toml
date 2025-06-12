@@ -1,3 +1,10 @@
-[workspace]
-members = ["crates/*"]
-resolver = "3"
+[package]
+name = "flow"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+log = { version = "0.4.27", features = ["std"] }
+tokio = { version = "1.45.1", features = ["full"] }
+x11rb-async = { version = "0.13.1", features = ["xkb"] }
