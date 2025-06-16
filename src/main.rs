@@ -6,19 +6,21 @@ use x11rb_async::rust_connection::RustConnection;
 
 use crate::logger::Logger;
 
+mod key;
 mod logger;
 mod wm;
-
 
 #[inline]
 fn setup_logger<P>(path: P) -> io::Result<()>
 where
-    P: AsRef<Path>
+    P: AsRef<Path>,
 {
     let logger = Logger::from_path(path)?;
     // safe to unwrap, a logger should not have been
     // set at this point
-    log::set_boxed_logger(Box::new(logger)).unwrap();
+    log::set_boxed_logger(Box::new(logger))
+        .map(|()| log::set_max_level(log::LevelFilter::Debug))
+        .unwrap();
     Ok(())
 }
 
@@ -30,6 +32,7 @@ fn setup_hooks() {
 }
 
 async fn run() -> anyhow::Result<()> {
+    log::info!("starting rust connection to x11 server");
     let (connection, display, derive) = RustConnection::connect(None).await?;
     let root = connection.setup().roots[display].root;
 
@@ -38,26 +41,20 @@ async fn run() -> anyhow::Result<()> {
     tokio::spawn(async move {
         match derive.await {
             Err(err) => log::error!("connection error {}", err),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     });
 
-    wm::WindowManager::new(connection, root).run()
+    wm::WindowManager::new(connection, root)
+        .setup().await?
+        .run().await
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     setup_logger("flow.log")?;
     setup_hooks();
-
-    let handler = tokio::spawn(async move {
-        let _ = run().await;
-    });
-
-    tokio::time::sleep(
-        std::time::Duration::from_secs(15)
-    ).await;
-
-    handler.abort();
-    Ok(())
+    run().await.inspect_err(|err| {
+        log::error!("exit with error, {}", err);
+    })
 }
