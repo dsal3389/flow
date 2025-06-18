@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.98"
 log = { version = "0.4.27", features = ["std"] }
+serde = { version = "1.0.219", features = ["derive"] }
 tokio = { version = "1.45.1", features = ["full"] }
+toml = "0.8.23"
 x11rb-async = { version = "0.13.1", features = ["xkb"] }
 xkbcommon = { version = "0.8.0", features = ["x11"] }

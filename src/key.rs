@@ -1,9 +1,8 @@
 use x11rb_async::connection::Connection;
-use x11rb_async::protocol::xkb::ConnectionExt as ConnectionXkb;
-use x11rb_async::protocol::xproto::{self, ConnectionExt as ConnectionXproto};
+use x11rb_async::protocol::xproto::{self, ConnectionExt};
 use xkbcommon::xkb;
 
-pub(crate) struct KeyState {
+pub struct KeyState {
     min_keycode: u8,
     max_keycode: u8,
     keysyms_per_keycode: u8,
@@ -11,7 +10,7 @@ pub(crate) struct KeyState {
 }
 
 impl KeyState {
-    pub(crate) fn new(
+    pub fn new(
         min_keycode: u8,
         max_keycode: u8,
         keysyms_per_keycode: u8,
@@ -25,11 +24,11 @@ impl KeyState {
         }
     }
 
-    pub(crate) async fn from_connection<C>(
-        connection: &C
-    ) -> anyhow::Result<Self>
+    /// creates a keystate instance from given conneection, will
+    /// perform the required requests
+    pub async fn from_connection<C>(connection: &C) -> anyhow::Result<Self>
     where
-        C: Connection + ConnectionXproto + ConnectionXkb
+        C: Connection,
     {
         let &xproto::Setup {
             min_keycode,
@@ -56,7 +55,7 @@ impl KeyState {
 
     /// takes Keysym and returns the equivelent Keycode
     /// based on the provided keysyms map
-    pub(crate) fn keysym_to_keycode(&self, keysym: xkb::Keysym) -> Option<xkb::Keycode> {
+    pub fn keysym_to_keycode(&self, keysym: xkb::Keysym) -> Option<xkb::Keycode> {
         self.keysyms
             .chunks(self.keysyms_per_keycode as usize)
             .enumerate()
@@ -69,25 +68,21 @@ impl KeyState {
 
 #[derive(Debug, Clone)]
 #[repr(transparent)]
-pub(crate) struct Key(char);
+pub struct Key(char);
 
 impl Key {
-    /// returns Keysym from the current char
+    /// returns Keysym representation for the current key
     #[inline]
-    pub(crate) fn keysym(&self) -> xkb::Keysym {
+    pub fn keysym(&self) -> xkb::Keysym {
         xkb::utf32_to_keysym(self.0 as u32)
     }
 
     /// returns the Keycode for the current char, returns None if
     /// couldn't find Keycode for current key in given KeyState
     #[inline]
-    pub(crate) fn keycode(&self, state: &KeyState) -> Option<xkb::Keycode> {
+    pub fn keycode(&self, state: &KeyState) -> Option<xkb::Keycode> {
         let keysym = self.keysym();
         state.keysym_to_keycode(keysym)
-    }
-
-    pub(crate) fn from_keycode(keycode: xkb::Keycode, state: &KeyState) -> Key {
-        todo!()
     }
 }
 
@@ -96,3 +91,6 @@ impl From<char> for Key {
         Key(value)
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct Keyboard;
