@@ -19,6 +19,7 @@ impl Logger {
         thread::spawn(move || {
             let mut stream = stream;
             while let Ok(message) = rx.recv() {
+                print!("{}", message);
                 let _ = stream.write_all(message.as_bytes());
             }
         });
@@ -46,7 +47,7 @@ impl log::Log for Logger {
     }
 
     fn log(&self, record: &Record) {
-        let message = format!("[{}] {}", record.metadata().level(), record.args());
+        let message = format!("[{}] {}\n", record.metadata().level(), record.args());
         let _ = self.tx.send(message);
     }
 
