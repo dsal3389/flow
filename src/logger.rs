@@ -1,14 +1,32 @@
+use std::thread;
 use std::io::{self, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
 
 use log::{Metadata, Record};
 
-pub struct Logger<W: Write + Sync + Send> {
-    stream: Arc<Mutex<W>>,
+/// the standard logger type that is used, at creation it will spawns
+/// a new thread that will handle writes to the given writer, so the logging
+/// operations will never block
+pub struct Logger {
+    tx: mpsc::Sender<String>,
 }
 
-impl Logger<std::fs::File> {
+impl Logger {
+    pub fn new<W: Write + Sync + Send + 'static>(stream: W) -> Self {
+        let (tx, rx) = mpsc::channel::<String>();
+
+        thread::spawn(move || {
+            let mut stream = stream;
+            while let Ok(message) = rx.recv() {
+                let _ = stream.write_all(message.as_bytes());
+            }
+        });
+
+        Logger { tx }
+    }
+
+    /// creates a new logger that writes to the given filepath
     pub fn from_path<P>(path: P) -> io::Result<Self>
     where
         P: AsRef<Path>,
@@ -18,25 +36,18 @@ impl Logger<std::fs::File> {
             .truncate(true)
             .write(true)
             .open(path)?;
-        let stream = Arc::new(Mutex::new(file));
-        Ok(Logger { stream })
+        Ok(Logger::new(file))
     }
 }
 
-impl<W> log::Log for Logger<W>
-where
-    W: Write + Sync + Send,
-{
+impl log::Log for Logger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= log::max_level()
     }
 
     fn log(&self, record: &Record) {
-        let stream = Arc::clone(&self.stream);
         let message = format!("[{}] {}", record.metadata().level(), record.args());
-
-        println!("{}", message);
-        writeln!(stream.lock().unwrap(), "{}", message).expect("could not write to log stream");
+        let _ = self.tx.send(message);
     }
 
     fn flush(&self) {}
