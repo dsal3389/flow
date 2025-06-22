@@ -2,6 +2,7 @@ use x11rb_async::connection::Connection;
 use x11rb_async::protocol::xproto::{self, ConnectionExt};
 use xkbcommon::xkb;
 
+#[derive(Debug)]
 pub struct KeyState {
     min_keycode: u8,
     max_keycode: u8,
@@ -66,7 +67,7 @@ impl KeyState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct Key(char);
 
@@ -91,6 +92,3 @@ impl From<char> for Key {
         Key(value)
     }
 }
-
-#[derive(Debug)]
-pub(crate) struct Keyboard;

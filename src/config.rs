@@ -10,15 +10,20 @@ pub struct ConfigBind {
     spawn: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct ConfigBinds {
-    binds: HashMap<String, ConfigBind>,
+impl ConfigBind {
+    pub fn keys(&self) -> &[String] {
+        &self.keys
+    }
+
+    pub fn spawn(&self) -> &[String] {
+        &self.spawn
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
-    binds: ConfigBinds,
+    binds: HashMap<String, ConfigBind>,
 }
 
 impl Config {
@@ -30,5 +35,10 @@ impl Config {
     {
         let content = read_to_string(path)?;
         Ok(toml::from_str(&content)?)
+    }
+
+    #[inline]
+    pub fn binds(&self) -> &HashMap<String, ConfigBind> {
+        &self.binds
     }
 }

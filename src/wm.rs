@@ -1,26 +1,34 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
+use std::sync::Arc;
 
+use tokio::sync::Mutex;
 use x11rb_async::connection::Connection;
 use x11rb_async::errors::ReplyError;
 use x11rb_async::protocol::xkb::ConnectionExt as _;
-use x11rb_async::protocol::xproto::{self, ConnectionExt as _, EventMask, Window};
+use x11rb_async::protocol::xproto::{
+    self, ConnectionExt as _, EventMask, GrabMode, ModMask, Window,
+};
 use x11rb_async::protocol::{ErrorKind, Event};
 use xkbcommon::xkb;
 
 use crate::Config;
+use crate::binds::{BindsTree, SpawnHandler};
 use crate::key::{Key, KeyState};
 
-pub struct WindowManager<C> {
+pub struct WindowManager<C>
+where
+    C: Connection + Sync + Send + 'static,
+{
     config: Config,
-    connection: C,
-    keybinds: HashMap<xkb::Keycode, ()>,
     keystate: KeyState,
+    connection: C,
+    binds: Mutex<BindsTree>,
     root: Window,
 }
 
 impl<C> WindowManager<C>
 where
-    C: Connection
+    C: Connection + Sync + Send + 'static,
 {
     /// creates a new window manager from the given connection
     /// will try to change the root window attributes to register
@@ -55,52 +63,77 @@ where
             connection,
             root,
             keystate,
-            keybinds: HashMap::default(),
+            binds: Mutex::new(BindsTree::default()),
         })
     }
 
     /// running the window manager will register for keybinds defined in the
     /// configuration and listen/handle events from X11
-    pub async fn run(mut self) -> anyhow::Result<()> {
-        self.setup_binds().await?;
+    pub async fn run(self: Arc<Self>) -> anyhow::Result<()> {
+        Arc::clone(&self).setup_binds().await?;
+
         loop {
             match self.connection.wait_for_event().await? {
-                Event::KeyPress(event) => {
-                    log::info!(
-                        "key press event {:?}, {:?}",
-                        event.detail,
-                        self.keybinds.get(&xkb::Keycode::new(event.detail as u32))
-                    )
-                }
+                Event::KeyPress(event) => log::info!("key press event"),
                 _ => {}
             }
         }
         Ok(())
     }
 
-    async fn setup_binds(&mut self) -> anyhow::Result<()> {
-        let keys = vec![
-            Key::from('q').keycode(&self.keystate).unwrap(),
-            Key::from('w').keycode(&self.keystate).unwrap(),
-        ];
-        let mut map = HashMap::new();
+    async fn setup_binds(self: Arc<Self>) -> anyhow::Result<()> {
+        let mut keycodes_to_register = HashSet::new();
 
-        for keycode in keys {
-            map.insert(keycode, ());
-            self.connection
-                .grab_key(
-                    true,
-                    self.root,
-                    xproto::ModMask::ANY,
-                    keycode,
-                    xproto::GrabMode::ASYNC,
-                    xproto::GrabMode::ASYNC,
-                )
-                .await?
-                .check()
-                .await?;
+        // iterator on the config binds, for each bind we register the
+        // combo and add the chars to the `keycodes_to_register` set
+        // so we will later request those key press events from the X server
+        for (_, config_bind) in self.config.binds() {
+            let keycode_combo: Vec<xkb::Keycode> = config_bind
+                .keys()
+                .iter()
+                .filter_map(|key| {
+                    if key.len() == 0 {
+                        return None;
+                    }
+                    let key: Key = key.chars().next().unwrap().into();
+                    key.keycode(&self.keystate)
+                })
+                .collect();
+
+            self.binds
+                .lock()
+                .await
+                .add_combo(&keycode_combo, Box::new(SpawnHandler::default()));
+            keycodes_to_register.extend(keycode_combo);
         }
-        self.keybinds = map;
+
+        let mut tasks = tokio::task::JoinSet::<anyhow::Result<()>>::new();
+
+        for keycode in keycodes_to_register {
+            let wm = Arc::clone(&self);
+
+            tasks.spawn(async move {
+                wm
+                    .connection
+                    .grab_key(
+                        true,
+                        wm.root,
+                        ModMask::ANY,
+                        keycode,
+                        GrabMode::ASYNC,
+                        GrabMode::ASYNC,
+                    )
+                    .await?
+                    .check()
+                    .await?;
+                Ok(())
+            });
+        }
+
+        // wait for all grab keys to finish
+        // before we continue, we don't care for now if some failed
+        // or suceed
+        let _ = tasks.join_all().await;
         Ok(())
     }
 }

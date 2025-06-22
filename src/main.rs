@@ -1,5 +1,7 @@
 use std::path::Path;
+use std::sync::Arc;
 
+use tokio::sync::Mutex;
 use x11rb_async::connection::Connection;
 use x11rb_async::rust_connection::RustConnection;
 
@@ -27,12 +29,10 @@ fn setup_hooks() {
 }
 
 async fn run() -> anyhow::Result<()> {
-    // find the config path and load it immidiatly
-    let config = flow::find_config_path("flow.cfg")
-        .and_then(|cfg_path| {
-            log::debug!("found config file at `{}`", cfg_path.display());
-            flow::Config::from_path(cfg_path)
-        })?;
+    let config = flow::find_config_path("flow.toml").and_then(|cfg_path| {
+        log::debug!("found config file at `{}`", cfg_path.display());
+        flow::Config::from_path(cfg_path)
+    })?;
 
     log::info!("starting rust connection to x11 server");
     let (connection, display, derive) = RustConnection::connect(None).await?;
@@ -47,10 +47,8 @@ async fn run() -> anyhow::Result<()> {
         }
     });
 
-    flow::WindowManager::from_connection(connection, root, config)
-        .await?
-        .run()
-        .await
+    let wm = Arc::new(flow::WindowManager::from_connection(connection, root, config).await?);
+    wm.run().await
 }
 
 #[tokio::main]
