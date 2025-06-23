@@ -1,7 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use tokio::sync::Mutex;
 use x11rb_async::connection::Connection;
 use x11rb_async::rust_connection::RustConnection;
 

@@ -5,8 +5,8 @@ use anyhow::Context;
 
 mod binds;
 mod config;
-mod key;
 mod logger;
+mod key;
 mod wm;
 
 pub use config::Config;

@@ -47,4 +47,9 @@ impl BindsTree {
     pub fn add_combo(&mut self, combo: &[xkb::Keycode], handler: Box<dyn BindHandler>) {
         self.root.add(combo, handler)
     }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.root.entries.drain();
+    }
 }

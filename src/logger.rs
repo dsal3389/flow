@@ -1,7 +1,6 @@
 use std::io::{self, Write};
 use std::path::Path;
 use std::sync::mpsc;
-use std::thread;
 
 use log::{Metadata, Record};
 
@@ -16,7 +15,7 @@ impl Logger {
     pub fn new<W: Write + Sync + Send + 'static>(stream: W) -> Self {
         let (tx, rx) = mpsc::channel::<String>();
 
-        thread::spawn(move || {
+        std::thread::spawn(move || {
             let mut stream = stream;
             while let Ok(message) = rx.recv() {
                 print!("{}", message);

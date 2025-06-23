@@ -1,13 +1,13 @@
-use std::collections::HashSet;
 use std::sync::Arc;
+use std::collections::HashSet;
 
 use tokio::sync::Mutex;
-use x11rb_async::connection::Connection;
+use tokio::task::JoinSet;
+
 use x11rb_async::errors::ReplyError;
+use x11rb_async::connection::Connection;
 use x11rb_async::protocol::xkb::ConnectionExt as _;
-use x11rb_async::protocol::xproto::{
-    self, ConnectionExt as _, EventMask, GrabMode, ModMask, Window,
-};
+use x11rb_async::protocol::xproto::{self, ConnectionExt as _, EventMask, GrabMode, ModMask, Window};
 use x11rb_async::protocol::{ErrorKind, Event};
 use xkbcommon::xkb;
 
@@ -70,7 +70,7 @@ where
     /// running the window manager will register for keybinds defined in the
     /// configuration and listen/handle events from X11
     pub async fn run(self: Arc<Self>) -> anyhow::Result<()> {
-        Arc::clone(&self).setup_binds().await?;
+        self.clone().setup_binds().await?;
 
         loop {
             match self.connection.wait_for_event().await? {
@@ -92,11 +92,10 @@ where
                 .keys()
                 .iter()
                 .filter_map(|key| {
-                    if key.len() == 0 {
-                        return None;
-                    }
-                    let key: Key = key.chars().next().unwrap().into();
-                    key.keycode(&self.keystate)
+                    key.chars().next().and_then(|c| {
+                        let key = Key::from(c);
+                        key.keycode(&self.keystate)
+                    })
                 })
                 .collect();
 
@@ -107,14 +106,13 @@ where
             keycodes_to_register.extend(keycode_combo);
         }
 
-        let mut tasks = tokio::task::JoinSet::<anyhow::Result<()>>::new();
+        let mut tasks = JoinSet::<anyhow::Result<()>>::new();
 
+        // create an async task for each key that is needed to be grabbed
         for keycode in keycodes_to_register {
             let wm = Arc::clone(&self);
-
             tasks.spawn(async move {
-                wm
-                    .connection
+                wm.connection
                     .grab_key(
                         true,
                         wm.root,
