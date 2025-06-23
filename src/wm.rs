@@ -74,7 +74,11 @@ where
 
         loop {
             match self.connection.wait_for_event().await? {
-                Event::KeyPress(event) => log::info!("key press event"),
+                Event::KeyPress(event) => {
+                    let binds = self.binds.lock().await;
+                    let found_combo = binds.find_combo_handler(&[event.detail]);
+                    log::info!("key press, found comobo {}", found_combo.is_some());
+                }
                 _ => {}
             }
         }
