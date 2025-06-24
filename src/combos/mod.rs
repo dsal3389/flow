@@ -10,18 +10,18 @@ pub use spawn::SpawnHandler;
 /// a trait that is implemented on types that can be used
 /// as handlers for key combo
 #[async_trait]
-pub trait BindHandler: Send + Sync {
+pub trait ComboHandler: Send + Sync {
     async fn handle(&self) -> anyhow::Result<()>;
 }
 
 #[derive(Default)]
-struct KeyBind {
-    entries: HashMap<xkb::Keycode, KeyBind>,
-    handler: Option<Box<dyn BindHandler>>,
+struct Combo {
+    entries: HashMap<xkb::Keycode, Combo>,
+    handler: Option<Box<dyn ComboHandler>>,
 }
 
-impl KeyBind {
-    fn add<T>(&mut self, combo: &[T], handler: Box<dyn BindHandler>)
+impl Combo {
+    fn add<T>(&mut self, combo: &[T], handler: Box<dyn ComboHandler>)
     where
         T: Into<xkb::Keycode> + Clone
     {
@@ -39,7 +39,7 @@ impl KeyBind {
         };
     }
 
-    fn find<T>(&self, combo: &[T]) -> Option<&dyn BindHandler>
+    fn find<T>(&self, combo: &[T]) -> Option<&dyn ComboHandler>
     where
         T: Into<xkb::Keycode> + Clone
     {
@@ -57,15 +57,15 @@ impl KeyBind {
 /// use keycodes to signal what key was pressed, `BindsTree` also uses keycodes
 /// for combinations, if key we want
 #[derive(Default)]
-pub struct BindsTree {
-    root: KeyBind,
+pub struct ComboTree {
+    root: Combo,
 }
 
-impl BindsTree {
+impl ComboTree {
     /// takes a combination of keycode arguments with the handler that should be called
     /// when the combination performed
     #[inline]
-    pub fn add_combo<T>(&mut self, combo: &[T], handler: Box<dyn BindHandler>)
+    pub fn add_combo<T>(&mut self, combo: &[T], handler: Box<dyn ComboHandler>)
     where
         T: Into<xkb::Keycode> + Clone
     {
@@ -75,7 +75,7 @@ impl BindsTree {
     /// returns the handler for the provided combo, if `None` is returned
     /// it means that the given combination wasn't registered
     #[inline]
-    pub fn find_combo_handler<T>(&self, combo: &[T]) -> Option<&dyn BindHandler>
+    pub fn find_combo_handler<T>(&self, combo: &[T]) -> Option<&dyn ComboHandler>
     where
         T: Into<xkb::Keycode> + Clone
     {

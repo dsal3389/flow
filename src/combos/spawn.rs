@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use super::BindHandler;
+use super::ComboHandler;
 
 // TODO: remove Default impl, its only for testing
 #[derive(Default)]
@@ -10,7 +10,7 @@ pub struct SpawnHandler {
 }
 
 #[async_trait]
-impl BindHandler for SpawnHandler {
+impl ComboHandler for SpawnHandler {
     async fn handle(&self) -> anyhow::Result<()> {
         Ok(())
     }

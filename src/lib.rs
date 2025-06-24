@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 
-mod binds;
+mod combos;
 mod config;
 mod logger;
 mod key;

@@ -12,7 +12,7 @@ use x11rb_async::protocol::{ErrorKind, Event};
 use xkbcommon::xkb;
 
 use crate::Config;
-use crate::binds::{BindsTree, SpawnHandler};
+use crate::combos::{ComboTree, SpawnHandler};
 use crate::key::{Key, KeyState};
 
 pub struct WindowManager<C>
@@ -22,7 +22,7 @@ where
     config: Config,
     keystate: KeyState,
     connection: C,
-    binds: Mutex<BindsTree>,
+    combos: Mutex<ComboTree>,
     root: Window,
 }
 
@@ -63,7 +63,7 @@ where
             connection,
             root,
             keystate,
-            binds: Mutex::new(BindsTree::default()),
+            combos: Mutex::new(ComboTree::default()),
         })
     }
 
@@ -75,7 +75,7 @@ where
         loop {
             match self.connection.wait_for_event().await? {
                 Event::KeyPress(event) => {
-                    let binds = self.binds.lock().await;
+                    let binds = self.combos.lock().await;
                     let found_combo = binds.find_combo_handler(&[event.detail]);
                     log::info!("key press, found comobo {}", found_combo.is_some());
                 }
@@ -103,7 +103,7 @@ where
                 })
                 .collect();
 
-            self.binds
+            self.combos
                 .lock()
                 .await
                 .add_combo(&keycode_combo, Box::new(SpawnHandler::default()));
