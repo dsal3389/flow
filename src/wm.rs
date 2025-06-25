@@ -7,13 +7,22 @@ use tokio::task::JoinSet;
 use x11rb_async::errors::ReplyError;
 use x11rb_async::connection::Connection;
 use x11rb_async::protocol::xkb::ConnectionExt as _;
-use x11rb_async::protocol::xproto::{self, ConnectionExt as _, EventMask, GrabMode, ModMask, Window};
+use x11rb_async::protocol::xproto::{
+    ConnectionExt as _,
+    ChangeWindowAttributesAux,
+    EventMask,
+    GrabMode,
+    ModMask,
+    Window
+};
 use x11rb_async::protocol::{ErrorKind, Event};
 use xkbcommon::xkb;
 
 use crate::Config;
-use crate::combos::{ComboTree, SpawnHandler};
 use crate::key::{Key, KeyState};
+
+use crate::combos::{ComboTree, ComboRecord};
+use crate::combos::handlers::Spawn;
 
 pub struct WindowManager<C>
 where
@@ -22,8 +31,9 @@ where
     config: Config,
     keystate: KeyState,
     connection: C,
-    combos: Mutex<ComboTree>,
     root: Window,
+    combos: Mutex<ComboTree>,
+    combos_record: Mutex<ComboRecord>,
 }
 
 impl<C> WindowManager<C>
@@ -38,7 +48,7 @@ where
         root: Window,
         config: Config,
     ) -> anyhow::Result<Self> {
-        let attributes = xproto::ChangeWindowAttributesAux::new()
+        let attributes = ChangeWindowAttributesAux::new()
             .event_mask(EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT);
         connection
             .change_window_attributes(root, &attributes)
@@ -64,6 +74,7 @@ where
             root,
             keystate,
             combos: Mutex::new(ComboTree::default()),
+            combos_record: Mutex::new(ComboRecord::default())
         })
     }
 
@@ -75,9 +86,19 @@ where
         loop {
             match self.connection.wait_for_event().await? {
                 Event::KeyPress(event) => {
+                    let combo = {
+                        let mut combo_record = self.combos_record.lock().await;
+                        combo_record.press(event.detail);
+                        combo_record.combo().to_vec()
+                    };
+                    self.combos_record.lock().await.press(event.detail);
+
                     let binds = self.combos.lock().await;
-                    let found_combo = binds.find_combo_handler(&[event.detail]);
-                    log::info!("key press, found comobo {}", found_combo.is_some());
+                    let found_combo = binds.find_combo_handler(&combo);
+                    log::info!("key press, found combo {}, record {:?}", found_combo.is_some(), self.combos_record.lock().await);
+                }
+                Event::KeyRelease(event) => {
+                    self.combos_record.lock().await.release(event.detail);
                 }
                 _ => {}
             }
@@ -86,6 +107,12 @@ where
     }
 
     async fn setup_binds(self: Arc<Self>) -> anyhow::Result<()> {
+        self.connection.ungrab_key(
+            0,
+            self.root,
+            ModMask::ANY
+        ).await?.check().await?;
+
         let mut keycodes_to_register = HashSet::new();
 
         // iterator on the config binds, for each bind we register the
@@ -106,7 +133,7 @@ where
             self.combos
                 .lock()
                 .await
-                .add_combo(&keycode_combo, Box::new(SpawnHandler::default()));
+                .add_combo(&keycode_combo, Box::new(Spawn::default()));
             keycodes_to_register.extend(keycode_combo);
         }
 

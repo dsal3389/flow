@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct ConfigBind {
     keys: Vec<String>,
     spawn: Vec<String>,
@@ -20,7 +20,7 @@ impl ConfigBind {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
     binds: HashMap<String, ConfigBind>,
@@ -37,6 +37,8 @@ impl Config {
         Ok(toml::from_str(&content)?)
     }
 
+    /// returns the configured binds as hashmaps, the key is the bind name
+    /// while the value is the config bind
     #[inline]
     pub fn binds(&self) -> &HashMap<String, ConfigBind> {
         &self.binds
