@@ -1,19 +1,22 @@
+use std::sync::Arc;
 use std::collections::HashMap;
 use xkbcommon::xkb;
 
 use super::handlers::ComboHandler;
 
-
 #[derive(Default)]
 struct Combo {
     entries: HashMap<xkb::Keycode, Combo>,
-    handler: Option<Box<dyn ComboHandler>>,
+    /// the handler for the current combination, it is inside
+    /// an `Arc` so it can be returned indipendently of the lifetime
+    /// of the current Combo
+    handler: Option<Arc<dyn ComboHandler>>,
 }
 
 impl Combo {
-    fn add<T>(&mut self, combo: &[T], handler: Box<dyn ComboHandler>)
+    fn add<T>(&mut self, combo: &[T], handler: Arc<dyn ComboHandler>)
     where
-        T: Into<xkb::Keycode> + Clone
+        T: Into<xkb::Keycode> + Clone,
     {
         match combo.first().cloned() {
             Some(keycode) => self
@@ -29,16 +32,19 @@ impl Combo {
         };
     }
 
-    fn find<T>(&self, combo: &[T]) -> Option<&dyn ComboHandler>
+    /// drills down the `entries` to the last `Combo`, when last combo is reached
+    /// the iterator will be empty and the combo should return its handler
+    fn find<I, T>(&self, mut combo: I) -> Option<Arc<dyn ComboHandler>>
     where
-        T: Into<xkb::Keycode> + Clone
+        I: Iterator<Item = T>,
+        T: Into<xkb::Keycode>,
     {
-        match combo.first().cloned() {
-            Some(keycode) => {
-                self.entries.get(&keycode.into())
-                    .and_then(|bind| bind.find(&combo[1..]))
-            },
-            None => self.handler.as_ref().map(|handler| &**handler)
+        match combo.next() {
+            Some(keycode) => self
+                .entries
+                .get(&keycode.into())
+                .and_then(|bind| bind.find(combo)),
+            None => self.handler.as_ref().map(|handler| Arc::clone(handler)),
         }
     }
 }
@@ -55,9 +61,9 @@ impl ComboTree {
     /// takes a combination of keycode arguments with the handler that should be called
     /// when the combination performed
     #[inline]
-    pub fn add_combo<T>(&mut self, combo: &[T], handler: Box<dyn ComboHandler>)
+    pub fn add_combo<T>(&mut self, combo: &[T], handler: Arc<dyn ComboHandler>)
     where
-        T: Into<xkb::Keycode> + Clone
+        T: Into<xkb::Keycode> + Clone,
     {
         self.root.add(combo, handler)
     }
@@ -65,11 +71,12 @@ impl ComboTree {
     /// returns the handler for the provided combo, if `None` is returned
     /// it means that the given combination wasn't registered
     #[inline]
-    pub fn find_combo_handler<T>(&self, combo: &[T]) -> Option<&dyn ComboHandler>
+    pub fn find_combo_handler<I, T>(&self, combo: I) -> Option<Arc<dyn ComboHandler>>
     where
-        T: Into<xkb::Keycode> + Clone
+        I: IntoIterator<Item = T>,
+        T: Into<xkb::Keycode>,
     {
-        self.root.find(combo)
+        self.root.find(combo.into_iter())
     }
 
     /// clears all registered combinations in the bind tree

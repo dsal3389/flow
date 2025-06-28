@@ -1,7 +1,31 @@
 use x11rb_async::connection::Connection;
-use x11rb_async::protocol::xproto::{self, ConnectionExt};
+use x11rb_async::protocol::xproto::{Setup, GetKeyboardMappingReply, ConnectionExt};
 use xkbcommon::xkb;
 
+/// each x11 server can run different keyboard layout, so converting
+/// key char to keycode is not stright forward, we need to convert the char
+/// to a keysym and convert the keysym to a matching keycode in the retrive
+/// information from x11
+///
+/// the keysyms is a 2d array represented as a 1d array, each row in the array
+/// is with the given size `keysym_per_keycode` so that how we know how much to advance
+///
+/// for example, 2d array that look like so
+/// ```
+/// [
+///     [1, 2, 3, 4],
+///     [5, 6, 7, 8]
+/// ]
+/// ```
+///
+/// will be represented as
+/// ```
+/// keysym_per_keycode = 4; jumps of 4
+///
+/// [1, 2 ,3 ,4, 5, 6, 7, 8]
+///  ^           ^
+///  0-----------4---------- offset
+/// ```
 #[derive(Debug)]
 pub struct KeyState {
     min_keycode: u8,
@@ -31,12 +55,12 @@ impl KeyState {
     where
         C: Connection,
     {
-        let &xproto::Setup {
+        let &Setup {
             min_keycode,
             max_keycode,
             ..
         } = connection.setup();
-        let xproto::GetKeyboardMappingReply {
+        let GetKeyboardMappingReply {
             keysyms_per_keycode,
             keysyms,
             ..

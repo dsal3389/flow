@@ -8,12 +8,7 @@ use x11rb_async::errors::ReplyError;
 use x11rb_async::connection::Connection;
 use x11rb_async::protocol::xkb::ConnectionExt as _;
 use x11rb_async::protocol::xproto::{
-    ConnectionExt as _,
-    ChangeWindowAttributesAux,
-    EventMask,
-    GrabMode,
-    ModMask,
-    Window
+    ConnectionExt as _, ChangeWindowAttributesAux, EventMask, GrabMode, ModMask, Window,
 };
 use x11rb_async::protocol::{ErrorKind, Event};
 use xkbcommon::xkb;
@@ -27,12 +22,11 @@ use crate::combos::handlers::Spawn;
 pub struct WindowManager<C>
 where
     C: Connection + Sync + Send + 'static,
-{
-    config: Config,
-    keystate: KeyState,
+{config: Config,
     connection: C,
     root: Window,
-    combos: Mutex<ComboTree>,
+    keystate: KeyState,
+    combos_tree: Mutex<ComboTree>,
     combos_record: Mutex<ComboRecord>,
 }
 
@@ -73,8 +67,8 @@ where
             connection,
             root,
             keystate,
-            combos: Mutex::new(ComboTree::default()),
-            combos_record: Mutex::new(ComboRecord::default())
+            combos_tree: Mutex::new(ComboTree::default()),
+            combos_record: Mutex::new(ComboRecord::default()),
         })
     }
 
@@ -86,19 +80,21 @@ where
         loop {
             match self.connection.wait_for_event().await? {
                 Event::KeyPress(event) => {
-                    let combo = {
+                    let combo_snapshot = {
                         let mut combo_record = self.combos_record.lock().await;
-                        combo_record.press(event.detail);
-                        combo_record.combo().to_vec()
+                        combo_record.add(event.detail.into());
+                        combo_record.snapshot()
                     };
-                    self.combos_record.lock().await.press(event.detail);
 
-                    let binds = self.combos.lock().await;
-                    let found_combo = binds.find_combo_handler(&combo);
-                    log::info!("key press, found combo {}, record {:?}", found_combo.is_some(), self.combos_record.lock().await);
+                    log::info!("combo {}", combo_snapshot);
+                    let handler = self.combos_tree.lock().await.find_combo_handler(combo_snapshot);
+                    log::info!("found handler {}", handler.is_some());
                 }
                 Event::KeyRelease(event) => {
-                    self.combos_record.lock().await.release(event.detail);
+                    self.combos_record.lock().await.remove(event.detail.into());
+                }
+                Event::MapRequest(event) => {
+                    log::info!("got window map request");
                 }
                 _ => {}
             }
@@ -107,18 +103,12 @@ where
     }
 
     async fn setup_binds(self: Arc<Self>) -> anyhow::Result<()> {
-        self.connection.ungrab_key(
-            0,
-            self.root,
-            ModMask::ANY
-        ).await?.check().await?;
-
-        let mut keycodes_to_register = HashSet::new();
+        let mut root_keycodes = HashSet::new();
 
         // iterator on the config binds, for each bind we register the
         // combo and add the chars to the `keycodes_to_register` set
         // so we will later request those key press events from the X server
-        for (_, config_bind) in self.config.binds() {
+        for (name, config_bind) in self.config.binds() {
             let keycode_combo: Vec<xkb::Keycode> = config_bind
                 .keys()
                 .iter()
@@ -130,24 +120,28 @@ where
                 })
                 .collect();
 
-            self.combos
-                .lock()
-                .await
-                .add_combo(&keycode_combo, Box::new(Spawn::default()));
-            keycodes_to_register.extend(keycode_combo);
+            self.combos_tree.lock().await.add_combo(
+                &keycode_combo,
+                Arc::new(Spawn::new(name.clone(), "alacritty".to_string(), Vec::new())),
+            );
+
+            // we only need to register the first key in the combo
+            // and x11 will report all keypresses while the root
+            // key is pressed first
+            root_keycodes.insert(keycode_combo.first().take().unwrap().clone());
         }
 
         let mut tasks = JoinSet::<anyhow::Result<()>>::new();
 
         // create an async task for each key that is needed to be grabbed
-        for keycode in keycodes_to_register {
+        for keycode in root_keycodes {
             let wm = Arc::clone(&self);
             tasks.spawn(async move {
                 wm.connection
                     .grab_key(
                         true,
                         wm.root,
-                        ModMask::ANY,
+                        ModMask::CONTROL,
                         keycode,
                         GrabMode::ASYNC,
                         GrabMode::ASYNC,
