@@ -46,7 +46,7 @@ async fn run() -> anyhow::Result<()> {
         }
     });
 
-    let wm = Arc::new(flow::WindowManager::from_connection(connection, root, config).await?);
+    let wm = Arc::new(flow::WindowManager::with_connection(connection, root, config).await?);
     wm.run().await
 }
 

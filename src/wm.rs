@@ -39,7 +39,7 @@ where
     /// creates a new window manager from the given connection
     /// will try to change the root window attributes to register
     /// as window manager
-    pub async fn from_connection(
+    pub async fn with_connection(
         connection: C,
         root: Window,
         config: Config,
@@ -160,6 +160,8 @@ where
         Ok(())
     }
 
+    /// this method is temporarly here for now, in future need to check
+    /// when the config file is edited and refresh the binds
     async fn setup_binds(self: Arc<Self>) -> anyhow::Result<()> {
         // here for future, when `setup_binds` will be
         // called multiple times

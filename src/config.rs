@@ -1,3 +1,8 @@
+/// the global window manager config
+///
+/// the configuration is used across the window-manager, it must have
+/// a default implementation if the user didn't configure a specific section
+/// or the user doesn't have config at all
 use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::path::Path;
@@ -34,6 +39,12 @@ impl From<Modifier> for ModMask {
     }
 }
 
+/// a combo definition contains the `keys` (key combination)
+/// and the action to take when the combination is executed
+///
+/// all combination has a "hidden" key at the start, that key is the modifier
+/// defined in the `FlowConfig`, so if a combination need to be executed
+/// the user must first press the `modifier` key and then the combination
 #[derive(Debug, Deserialize, Default)]
 pub struct ConfigCombo {
     keys: Vec<String>,
@@ -52,6 +63,8 @@ impl ConfigCombo{
     }
 }
 
+/// defines the global fields that the flow window manger uses
+/// those fields are too generic to be in specific sections
 #[derive(Debug, Deserialize, Default)]
 pub struct FlowConfig {
     modifier: Modifier
@@ -64,11 +77,25 @@ impl FlowConfig {
     }
 }
 
+/// represent the fields and sections that the config file
+/// should contain, the config must always implement the `Default`
+/// trait in cases user doesn't implement a section or doesn't
+/// have config file at all
+///
+/// the guarantee to implement the `Default` trait result in
+/// easier / cleaner config file, not requiring to hussle with config
+/// options and just start
 #[derive(Debug, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
     flow: FlowConfig,
 
+    /// the defined combos with names in the config file
+    /// the hashkey is the name, the value is the combo information
+    /// ```toml
+    /// [combos.name]
+    /// ...
+    /// ```
     #[serde(rename(deserialize="combo"))]
     combos: HashMap<String, ConfigCombo>,
 }

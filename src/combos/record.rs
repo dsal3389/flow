@@ -5,6 +5,14 @@
 use std::fmt;
 use xkbcommon::xkb;
 
+/// user pressed combination can change very fast
+/// and we want to take a snapshot of the current pressed combinations
+/// to do stuff with it, but we don't want to block the user from pressing more
+/// combination while we handle a specific one
+///
+/// so snapshot takes the current pressed combinations state and
+/// allows us to handle snapped combination while the user continue
+/// with different combinations
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct ComboSnapshot(Vec<xkb::Keycode>);
@@ -38,7 +46,6 @@ impl ComboRecord {
     /// pushes the given keycode to the end of the combo
     /// since this the given keycode is
     pub fn add(&mut self, keycode: xkb::Keycode) {
-        let keycode = keycode.into();
         if !self.0.contains(&keycode) {
             self.0.push(keycode);
         }
@@ -47,7 +54,6 @@ impl ComboRecord {
     /// remove the given keycode from the combo, if the keycode somehow
     /// does not exists nothing will be done
     pub fn remove(&mut self, keycode: xkb::Keycode) {
-        let keycode = keycode.into();
         let index = self.0.iter().enumerate().find_map(|(i, k)| {
             if *k == keycode {
                 return Some(i);
@@ -56,11 +62,7 @@ impl ComboRecord {
         });
 
         if let Some(index) = index {
-            if index == 0 {
-                self.0.clear();
-            } else {
-                self.0.remove(index);
-            }
+            self.0.remove(index);
         }
     }
 
