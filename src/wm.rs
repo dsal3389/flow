@@ -8,7 +8,8 @@ use x11rb_async::errors::ReplyError;
 use x11rb_async::connection::Connection;
 use x11rb_async::protocol::xkb::ConnectionExt as _;
 use x11rb_async::protocol::xproto::{
-    ConnectionExt as _, ChangeWindowAttributesAux, EventMask, GrabMode, ModMask, Window,
+    ConnectionExt as _, ChangeWindowAttributesAux, ConfigureWindowAux, EventMask, GrabMode,
+    ModMask, Window,
 };
 use x11rb_async::protocol::{ErrorKind, Event};
 use xkbcommon::xkb;
@@ -22,7 +23,8 @@ use crate::combos::handlers::Spawn;
 pub struct WindowManager<C>
 where
     C: Connection + Sync + Send + 'static,
-{config: Config,
+{
+    config: Config,
     connection: C,
     root: Window,
     keystate: KeyState,
@@ -42,10 +44,12 @@ where
         root: Window,
         config: Config,
     ) -> anyhow::Result<Self> {
-        let attributes = ChangeWindowAttributesAux::new()
-            .event_mask(EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT);
         connection
-            .change_window_attributes(root, &attributes)
+            .change_window_attributes(
+                root,
+                &ChangeWindowAttributesAux::new()
+                    .event_mask(EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT),
+            )
             .await?
             .check()
             .await
@@ -86,15 +90,69 @@ where
                         combo_record.snapshot()
                     };
 
-                    log::info!("combo {}", combo_snapshot);
-                    let handler = self.combos_tree.lock().await.find_combo_handler(combo_snapshot);
-                    log::info!("found handler {}", handler.is_some());
+                    if let Some(handler) = self
+                        .combos_tree
+                        .lock()
+                        .await
+                        .find_combo_handler(combo_snapshot)
+                    {
+                        log::info!("handler found {}", handler.handler_name());
+                        let _ = handler.handle().await.inspect_err(|err| {
+                            log::error!(
+                                "handler `{}` returned an error while trying to execute, {}",
+                                handler.handler_name(),
+                                err
+                            );
+                        });
+                    }
                 }
                 Event::KeyRelease(event) => {
                     self.combos_record.lock().await.remove(event.detail.into());
                 }
                 Event::MapRequest(event) => {
-                    log::info!("got window map request");
+                    log::info!("map request recv");
+                    let attributes = self
+                        .connection
+                        .get_window_attributes(event.window)
+                        .await?
+                        .reply()
+                        .await?;
+
+                    if attributes.override_redirect {
+                        continue;
+                    }
+
+                    self.connection.map_window(event.window).await?;
+                    self.connection
+                        .configure_window(
+                            event.window,
+                            &ConfigureWindowAux {
+                                x: Some(0),
+                                y: Some(0),
+                                width: Some(100),
+                                height: Some(100),
+                                border_width: Some(4),
+                                sibling: None,
+                                stack_mode: None,
+                            },
+                        )
+                        .await?;
+                }
+                Event::ConfigureRequest(event) => {
+                    self.connection
+                        .configure_window(
+                            event.window,
+                            &ConfigureWindowAux {
+                                x: Some(event.x as i32),
+                                y: Some(event.y as i32),
+                                width: Some(event.width as u32),
+                                height: Some(event.height as u32),
+                                border_width: None,
+                                sibling: None,
+                                stack_mode: None,
+                            },
+                        )
+                        .await?;
                 }
                 _ => {}
             }
@@ -103,13 +161,22 @@ where
     }
 
     async fn setup_binds(self: Arc<Self>) -> anyhow::Result<()> {
+        // here for future, when `setup_binds` will be
+        // called multiple times
+        self.combos_tree.lock().await.clear();
+        self.connection
+            .ungrab_key(0, self.root, ModMask::ANY)
+            .await?
+            .check()
+            .await?;
+
         let mut root_keycodes = HashSet::new();
 
         // iterator on the config binds, for each bind we register the
         // combo and add the chars to the `keycodes_to_register` set
         // so we will later request those key press events from the X server
-        for (name, config_bind) in self.config.binds() {
-            let keycode_combo: Vec<xkb::Keycode> = config_bind
+        for (name, config_combo) in self.config.combos() {
+            let keycode_combo: Vec<xkb::Keycode> = config_combo
                 .keys()
                 .iter()
                 .filter_map(|key| {
@@ -122,7 +189,11 @@ where
 
             self.combos_tree.lock().await.add_combo(
                 &keycode_combo,
-                Arc::new(Spawn::new(name.clone(), "alacritty".to_string(), Vec::new())),
+                Arc::new(Spawn::new(
+                    name.clone(),
+                    "alacritty".to_string(),
+                    Vec::new(),
+                )),
             );
 
             // we only need to register the first key in the combo
@@ -141,7 +212,7 @@ where
                     .grab_key(
                         true,
                         wm.root,
-                        ModMask::CONTROL,
+                        wm.config.flow().modifier().into(),
                         keycode,
                         GrabMode::ASYNC,
                         GrabMode::ASYNC,

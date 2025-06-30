@@ -54,7 +54,6 @@ async fn run() -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     setup_logger("flow.log")?;
     setup_hooks();
-
     // after successfull logger and panic hooks setups
     // we call the run function which holds the real functionality
     // and we log the errors returned if any

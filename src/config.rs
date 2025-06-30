@@ -4,26 +4,73 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use x11rb_async::protocol::xproto::ModMask;
+
+#[derive(Debug, Deserialize, Default, Clone, Copy)]
+pub enum Modifier {
+    CTRL,
+    SHIFT,
+    LOCK,
+    #[default]
+    M1,
+    M2,
+    M3,
+    M4,
+    M5
+}
+
+impl From<Modifier> for ModMask {
+    fn from(value: Modifier) -> ModMask {
+        match value {
+            Modifier::CTRL => ModMask::CONTROL,
+            Modifier::SHIFT => ModMask::SHIFT,
+            Modifier::LOCK => ModMask::LOCK,
+            Modifier::M1 => ModMask::M1,
+            Modifier::M2 => ModMask::M2,
+            Modifier::M3 => ModMask::M3,
+            Modifier::M4 => ModMask::M4,
+            Modifier::M5 => ModMask::M5,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Default)]
-pub struct ConfigBind {
+pub struct ConfigCombo {
     keys: Vec<String>,
     spawn: Vec<String>,
 }
 
-impl ConfigBind {
+impl ConfigCombo{
+    #[inline]
     pub fn keys(&self) -> &[String] {
         &self.keys
     }
 
+    #[inline]
     pub fn spawn(&self) -> &[String] {
         &self.spawn
     }
 }
 
 #[derive(Debug, Deserialize, Default)]
+pub struct FlowConfig {
+    modifier: Modifier
+}
+
+impl FlowConfig {
+    #[inline]
+    pub fn modifier(&self) -> Modifier {
+        self.modifier
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
-    binds: HashMap<String, ConfigBind>,
+    flow: FlowConfig,
+
+    #[serde(rename(deserialize="combo"))]
+    combos: HashMap<String, ConfigCombo>,
 }
 
 impl Config {
@@ -37,10 +84,15 @@ impl Config {
         Ok(toml::from_str(&content)?)
     }
 
-    /// returns the configured binds as hashmaps, the key is the bind name
+    #[inline]
+    pub fn flow(&self) -> &FlowConfig {
+        &self.flow
+    }
+
+    /// returns the configured combos as hashmaps, the key is the bind name
     /// while the value is the config bind
     #[inline]
-    pub fn binds(&self) -> &HashMap<String, ConfigBind> {
-        &self.binds
+    pub fn combos(&self) -> &HashMap<String, ConfigCombo> {
+        &self.combos
     }
 }

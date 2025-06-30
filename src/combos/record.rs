@@ -30,7 +30,7 @@ impl IntoIterator for ComboSnapshot {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct ComboRecord(Vec<xkb::Keycode>);
 
@@ -68,5 +68,11 @@ impl ComboRecord {
     /// in a ComboSnapshot object
     pub fn snapshot(&self) -> ComboSnapshot {
         ComboSnapshot(self.0.clone())
+    }
+}
+
+impl Default for ComboRecord {
+    fn default() -> Self {
+        Self(Vec::with_capacity(8))
     }
 }
