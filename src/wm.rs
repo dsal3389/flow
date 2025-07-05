@@ -9,7 +9,7 @@ use x11rb_async::connection::Connection;
 use x11rb_async::protocol::xkb::ConnectionExt as _;
 use x11rb_async::protocol::xproto::{
     ConnectionExt as _, ChangeWindowAttributesAux, ConfigureWindowAux, EventMask, GrabMode,
-    ModMask, Window,
+    KeyPressEvent, KeyReleaseEvent, MapRequestEvent, ConfigureRequestEvent, ModMask, Window,
 };
 use x11rb_async::protocol::{ErrorKind, Event};
 use xkbcommon::xkb;
@@ -83,61 +83,9 @@ where
 
         loop {
             match self.connection.wait_for_event().await? {
-                Event::KeyPress(event) => {
-                    let combo_snapshot = {
-                        let mut combo_record = self.combos_record.lock().await;
-                        combo_record.add(event.detail.into());
-                        combo_record.snapshot()
-                    };
-
-                    if let Some(handler) = self
-                        .combos_tree
-                        .lock()
-                        .await
-                        .find_combo_handler(combo_snapshot)
-                    {
-                        log::info!("handler found {}", handler.handler_name());
-                        let _ = handler.handle().await.inspect_err(|err| {
-                            log::error!(
-                                "handler `{}` returned an error while trying to execute, {}",
-                                handler.handler_name(),
-                                err
-                            );
-                        });
-                    }
-                }
-                Event::KeyRelease(event) => {
-                    self.combos_record.lock().await.remove(event.detail.into());
-                }
-                Event::MapRequest(event) => {
-                    log::info!("map request recv");
-                    let attributes = self
-                        .connection
-                        .get_window_attributes(event.window)
-                        .await?
-                        .reply()
-                        .await?;
-
-                    if attributes.override_redirect {
-                        continue;
-                    }
-
-                    self.connection.map_window(event.window).await?;
-                    self.connection
-                        .configure_window(
-                            event.window,
-                            &ConfigureWindowAux {
-                                x: Some(0),
-                                y: Some(0),
-                                width: Some(100),
-                                height: Some(100),
-                                border_width: Some(4),
-                                sibling: None,
-                                stack_mode: None,
-                            },
-                        )
-                        .await?;
-                }
+                Event::KeyPress(event) => self.handle_key_press_event(event).await,
+                Event::KeyRelease(event) => self.handle_key_release_event(event).await,
+                Event::MapRequest(event) => self.handle_map_request_event(event).await?,
                 Event::ConfigureRequest(event) => {
                     self.connection
                         .configure_window(
@@ -230,6 +178,67 @@ where
         // before we continue, we don't care for now if some failed
         // or suceed
         let _ = tasks.join_all().await;
+        Ok(())
+    }
+
+    #[inline]
+    async fn handle_key_press_event(&self, event: KeyPressEvent) {
+        let combo_snapshot = {
+            let mut combo_record = self.combos_record.lock().await;
+            combo_record.add(event.detail.into());
+            combo_record.snapshot()
+        };
+
+        if let Some(handler) = self
+            .combos_tree
+            .lock()
+            .await
+            .find_combo_handler(combo_snapshot)
+        {
+            log::info!("handler found {}", handler.handler_name());
+            let _ = handler.handle().await.inspect_err(|err| {
+                log::error!(
+                    "handler `{}` returned an error while trying to execute, {}",
+                    handler.handler_name(),
+                    err
+                );
+            });
+        }
+    }
+
+    #[inline]
+    async fn handle_key_release_event(&self, event: KeyReleaseEvent) {
+        self.combos_record.lock().await.remove(event.detail.into());
+    }
+
+    #[inline]
+    async fn handle_map_request_event(&self, event: MapRequestEvent) -> anyhow::Result<()> {
+        let attributes = self
+            .connection
+            .get_window_attributes(event.window)
+            .await?
+            .reply()
+            .await?;
+
+        if attributes.override_redirect {
+            return Ok(());
+        }
+
+        self.connection.map_window(event.window).await?;
+        self.connection
+            .configure_window(
+                event.window,
+                &ConfigureWindowAux {
+                    x: Some(0),
+                    y: Some(0),
+                    width: Some(100),
+                    height: Some(100),
+                    border_width: Some(4),
+                    sibling: None,
+                    stack_mode: None,
+                },
+            )
+            .await?;
         Ok(())
     }
 }

@@ -21,7 +21,7 @@ pub enum Modifier {
     M2,
     M3,
     M4,
-    M5
+    M5,
 }
 
 impl From<Modifier> for ModMask {
@@ -51,7 +51,7 @@ pub struct ConfigCombo {
     spawn: Vec<String>,
 }
 
-impl ConfigCombo{
+impl ConfigCombo {
     #[inline]
     pub fn keys(&self) -> &[String] {
         &self.keys
@@ -67,7 +67,7 @@ impl ConfigCombo{
 /// those fields are too generic to be in specific sections
 #[derive(Debug, Deserialize, Default)]
 pub struct FlowConfig {
-    modifier: Modifier
+    modifier: Modifier,
 }
 
 impl FlowConfig {
@@ -96,7 +96,7 @@ pub struct Config {
     /// [combos.name]
     /// ...
     /// ```
-    #[serde(rename(deserialize="combo"))]
+    #[serde(rename(deserialize = "combo"))]
     combos: HashMap<String, ConfigCombo>,
 }
 
