@@ -62,7 +62,14 @@ impl ComboRecord {
         });
 
         if let Some(index) = index {
-            self.0.remove(index);
+            if index == 0 {
+                // if the first key needs to be deleted (the root key)
+                // then all the tree should be deleted because a combination must start
+                // with the root key and X11 won't send keyrelease event for the other keys
+                self.0.clear();
+            } else {
+                self.0.remove(index);
+            }
         }
     }
 

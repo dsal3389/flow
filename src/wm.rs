@@ -95,9 +95,9 @@ where
                                 y: Some(event.y as i32),
                                 width: Some(event.width as u32),
                                 height: Some(event.height as u32),
-                                border_width: None,
-                                sibling: None,
-                                stack_mode: None,
+                                border_width: Some(event.border_width as u32),
+                                sibling: Some(event.sibling),
+                                stack_mode: Some(event.stack_mode),
                             },
                         )
                         .await?;
@@ -189,6 +189,8 @@ where
             combo_record.snapshot()
         };
 
+        println!("combo: {}", combo_snapshot);
+
         if let Some(handler) = self
             .combos_tree
             .lock()
@@ -231,8 +233,8 @@ where
                 &ConfigureWindowAux {
                     x: Some(0),
                     y: Some(0),
-                    width: Some(100),
-                    height: Some(100),
+                    width: Some(400),
+                    height: Some(400),
                     border_width: Some(4),
                     sibling: None,
                     stack_mode: None,
