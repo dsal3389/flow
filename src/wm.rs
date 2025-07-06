@@ -10,13 +10,14 @@ use x11rb_async::protocol::xkb::ConnectionExt as _;
 use x11rb_async::protocol::xproto::{
     ConnectionExt as _, ChangeWindowAttributesAux, ConfigureWindowAux, EventMask, GrabMode,
     KeyPressEvent, KeyReleaseEvent, MapRequestEvent, ConfigureRequestEvent, ModMask, Window,
+    PropMode, Property, Atom, AtomEnum
 };
 use x11rb_async::protocol::{ErrorKind, Event};
 use xkbcommon::xkb;
 
 use crate::Config;
 use crate::key::{Key, KeyState};
-
+use crate::workspace::Workspace;
 use crate::combos::{ComboTree, ComboRecord};
 use crate::combos::handlers::Spawn;
 
@@ -25,16 +26,35 @@ where
     C: Connection + Sync + Send + 'static,
 {
     config: Config,
-    connection: C,
+
+    /// connection is shared across other entities that may
+    /// use it like `Window` and `Workspace`, since those entities are managed
+    /// by the `WindowManger` they can reference to `WindowManager.connection` since
+    /// it will result in self reference
+    connection: Arc<C>,
+
+    /// the root window manager for the window manager, the parent
+    /// of all other windows
     root: Window,
+
+    /// key state of the current connection layout
     keystate: KeyState,
+    workspaces: [Workspace<C>; 9],
+
+    /// loads the combination from the `Config` and creates
+    /// a tree like structure that maps to the combo handler that was also
+    /// defined in the Config
     combos_tree: Mutex<ComboTree>,
+
+    /// record the received key presses into the combo record
+    /// and pass it to the combo tree to trigger the correct
+    /// handler based on the combination
     combos_record: Mutex<ComboRecord>,
 }
 
 impl<C> WindowManager<C>
 where
-    C: Connection + Sync + Send + 'static,
+    C: Connection + Sync + Send,
 {
     /// creates a new window manager from the given connection
     /// will try to change the root window attributes to register
@@ -44,6 +64,7 @@ where
         root: Window,
         config: Config,
     ) -> anyhow::Result<Self> {
+        let connection = Arc::new(connection);
         connection
             .change_window_attributes(
                 root,
@@ -64,13 +85,26 @@ where
             })?;
 
         connection.xkb_use_extension(1, 0).await?;
-        let keystate = KeyState::from_connection(&connection).await?;
+        let keystate = KeyState::from_connection(&*connection).await?;
+
+        let workspaces = [
+                Workspace::with_connection(connection.clone()),
+                Workspace::with_connection(connection.clone()),
+                Workspace::with_connection(connection.clone()),
+                Workspace::with_connection(connection.clone()),
+                Workspace::with_connection(connection.clone()),
+                Workspace::with_connection(connection.clone()),
+                Workspace::with_connection(connection.clone()),
+                Workspace::with_connection(connection.clone()),
+                Workspace::with_connection(connection.clone()),
+        ];
 
         Ok(WindowManager {
             config,
             connection,
             root,
             keystate,
+            workspaces,
             combos_tree: Mutex::new(ComboTree::default()),
             combos_record: Mutex::new(ComboRecord::default()),
         })
@@ -189,8 +223,6 @@ where
             combo_record.snapshot()
         };
 
-        println!("combo: {}", combo_snapshot);
-
         if let Some(handler) = self
             .combos_tree
             .lock()
@@ -231,9 +263,9 @@ where
             .configure_window(
                 event.window,
                 &ConfigureWindowAux {
-                    x: Some(0),
-                    y: Some(0),
-                    width: Some(400),
+                    x: Some(7),
+                    y: Some(7),
+                    width: Some(800),
                     height: Some(400),
                     border_width: Some(4),
                     sibling: None,
@@ -241,6 +273,18 @@ where
                 },
             )
             .await?;
+
+        // TODO: play and delete
+        self.connection
+            .change_property(
+                PropMode::REPLACE,
+                event.window,
+                AtomEnum::WM_NAME,
+                AtomEnum::STRING,
+                8,
+                5,
+                "hello".as_bytes()
+            ).await?.check().await?;
         Ok(())
     }
 }

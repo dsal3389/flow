@@ -3,9 +3,11 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 
+mod workspace;
 mod combos;
 mod config;
 mod logger;
+mod window;
 mod key;
 mod wm;
 
